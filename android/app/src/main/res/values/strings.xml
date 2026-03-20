@@ -14,7 +14,8 @@
     <string name="debug_yes">yes</string>
     <string name="debug_no">no</string>
     <string name="debug_section_title">Debug</string>
-    <string name="debug_edit_focus">Hidden EditText has focus: %1$s</string>
+    <string name="debug_edit_focus">Overlay EditText has focus: %1$s</string>
+    <string name="debug_overlay_missing">Overlay not shown — grant “Display over other apps”</string>
     <string name="debug_soft_keyboard">Soft keyboard (Gboard) shown: %1$s</string>
     <string name="debug_request_focus">Request Focus</string>
 </resources>

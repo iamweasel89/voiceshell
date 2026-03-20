@@ -102,19 +102,4 @@
             android:textSize="14sp" />
     </LinearLayout>
 
-    <!-- Gboard needs a focused field; keep present but visually hidden -->
-    <EditText
-        android:id="@+id/voice_input"
-        android:layout_width="1dp"
-        android:layout_height="1dp"
-        android:layout_marginBottom="8dp"
-        android:alpha="0"
-        android:background="@android:color/transparent"
-        android:importantForAccessibility="no"
-        android:inputType="textCapSentences|textMultiLine"
-        android:textColor="@android:color/transparent"
-        android:textCursorDrawable="@null"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
 </androidx.constraintlayout.widget.ConstraintLayout>
