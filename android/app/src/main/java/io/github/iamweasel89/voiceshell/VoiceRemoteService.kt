@@ -5,27 +5,19 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
-import android.graphics.PixelFormat
+import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import android.provider.Settings
-import android.text.Editable
-import android.text.TextWatcher
-import android.view.Gravity
-import android.view.LayoutInflater
-import android.view.WindowManager
-import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
-import android.widget.FrameLayout
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.core.app.NotificationCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -38,7 +30,7 @@ class VoiceRemoteService : Service() {
     interface ConnectionListener {
         fun onConnectionChanged(connected: Boolean, message: String?)
 
-        fun onVoiceOverlayDebugMayHaveChanged() {}
+        fun onVoiceDebugMayHaveChanged() {}
     }
 
     private val binder = LocalBinder()
@@ -59,22 +51,28 @@ class VoiceRemoteService : Service() {
 
     var connectionListener: ConnectionListener? = null
 
-    private var overlayRoot: FrameLayout? = null
-    private var overlayEdit: EditText? = null
-    private var windowManager: WindowManager? = null
-    private val voiceTextWatcher = VoicePayloadTextWatcher()
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var speechRecognitionActive = false
+    private var sessionEmittedWords: List<String> = emptyList()
+    private val wordSplitRegex = Regex("\\s+")
 
     @Volatile
-    var overlayAttached: Boolean = false
+    var speechRecognitionAvailable: Boolean = false
+        private set
+
+    /** Between [startListening][RecognitionListener.onReadyForSpeech] and end of that cycle. */
+    @Volatile
+    var isRecognizerInSession: Boolean = false
         private set
 
     @Volatile
-    var overlayEditHasFocus: Boolean = false
+    var lastRecognizerError: String? = null
         private set
 
-    @Volatile
-    var overlayImeVisible: Boolean = false
-        private set
+    private val startListeningRunnable = Runnable {
+        if (destroyed || !speechRecognitionActive) return@Runnable
+        beginListeningCycle()
+    }
 
     inner class LocalBinder : Binder() {
         fun getService(): VoiceRemoteService = this@VoiceRemoteService
@@ -84,6 +82,7 @@ class VoiceRemoteService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        speechRecognitionAvailable = SpeechRecognizer.isRecognitionAvailable(this)
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -94,16 +93,40 @@ class VoiceRemoteService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         destroyed = false
         wakeLock?.acquire(10 * 60 * 60 * 1000L)
-        startForeground(NOTIFICATION_ID, buildNotification())
+        val notification = buildNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            startForeground(NOTIFICATION_ID, notification)
+        }
         connectWebSocket()
-        mainHandler.post { attachVoiceOverlayIfAllowed() }
+        mainHandler.post { startContinuousRecognition() }
         return START_STICKY
     }
 
     override fun onDestroy() {
         destroyed = true
+        speechRecognitionActive = false
         mainHandler.removeCallbacks(reconnectRunnable)
-        mainHandler.post { detachVoiceOverlay() }
+        mainHandler.removeCallbacks(startListeningRunnable)
+        mainHandler.post {
+            runCatching { speechRecognizer?.stopListening() }
+            runCatching { speechRecognizer?.destroy() }
+            speechRecognizer = null
+            isRecognizerInSession = false
+        }
         connectionListener = null
         webSocket?.close(1000, "stop")
         webSocket = null
@@ -118,110 +141,193 @@ class VoiceRemoteService : Service() {
         webSocket?.send(text)
     }
 
-    /** Request focus on the service overlay [EditText] and show the IME (e.g. Gboard). */
-    fun requestOverlayFocusAndShowIme() {
+    /** Recreate the engine and resume the listen loop (e.g. after ERROR_CLIENT or stuck state). */
+    fun restartSpeechRecognition() {
         mainHandler.post {
-            val edit = overlayEdit ?: return@post
-            edit.requestFocus()
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT)
-            notifyOverlayDebugMayHaveChanged()
+            if (destroyed) return@post
+            runCatching { speechRecognizer?.stopListening() }
+            runCatching { speechRecognizer?.destroy() }
+            speechRecognizer = null
+            isRecognizerInSession = false
+            sessionEmittedWords = emptyList()
+            lastRecognizerError = null
+            notifyDebugChanged()
+            if (speechRecognitionActive) {
+                ensureRecognizerCreated()
+                scheduleStartListening(120)
+            }
         }
     }
 
-    private fun attachVoiceOverlayIfAllowed() {
+    private fun startContinuousRecognition() {
+        if (!speechRecognitionAvailable) {
+            lastRecognizerError = "Speech recognition not available on this device"
+            notifyDebugChanged()
+            return
+        }
+        speechRecognitionActive = true
+        ensureRecognizerCreated()
+        scheduleStartListening(0)
+    }
+
+    private fun ensureRecognizerCreated() {
+        if (speechRecognizer != null) return
+        val sr = SpeechRecognizer.createSpeechRecognizer(this)
+        sr.setRecognitionListener(recognitionListener)
+        speechRecognizer = sr
+    }
+
+    private fun scheduleStartListening(delayMs: Long) {
+        mainHandler.removeCallbacks(startListeningRunnable)
+        if (delayMs <= 0L) {
+            mainHandler.post(startListeningRunnable)
+        } else {
+            mainHandler.postDelayed(startListeningRunnable, delayMs)
+        }
+    }
+
+    private fun beginListeningCycle() {
+        if (destroyed || !speechRecognitionActive) return
+        if (!speechRecognitionAvailable) return
+        ensureRecognizerCreated()
+        val sr = speechRecognizer ?: return
+        sessionEmittedWords = emptyList()
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    2000L
+                )
+            }
+        }
+        runCatching {
+            sr.startListening(intent)
+        }.onFailure {
+            lastRecognizerError = it.message ?: "startListening failed"
+            notifyDebugChanged()
+            scheduleStartListening(500)
+        }
+    }
+
+    private val recognitionListener = object : RecognitionListener {
+        override fun onReadyForSpeech(params: Bundle?) {
+            isRecognizerInSession = true
+            lastRecognizerError = null
+            notifyDebugChanged()
+        }
+
+        override fun onBeginningOfSpeech() {}
+
+        override fun onRmsChanged(rmsdB: Float) {}
+
+        override fun onBufferReceived(buffer: ByteArray?) {}
+
+        override fun onEndOfSpeech() {}
+
+        override fun onError(error: Int) {
+            isRecognizerInSession = false
+            lastRecognizerError = speechErrorToString(error)
+            notifyDebugChanged()
+            val delay = when (error) {
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 600L
+                SpeechRecognizer.ERROR_CLIENT -> {
+                    mainHandler.post {
+                        runCatching { speechRecognizer?.destroy() }
+                        speechRecognizer = null
+                        ensureRecognizerCreated()
+                    }
+                    250L
+                }
+                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                    speechRecognitionActive = false
+                    0L
+                }
+                else -> 120L
+            }
+            if (speechRecognitionActive && error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                scheduleStartListening(delay)
+            }
+        }
+
+        override fun onResults(results: Bundle?) {
+            isRecognizerInSession = false
+            val text = bestHypothesis(results)
+            emitWordsFromHypothesis(text)
+            sessionEmittedWords = emptyList()
+            notifyDebugChanged()
+            if (speechRecognitionActive) {
+                scheduleStartListening(80)
+            }
+        }
+
+        override fun onPartialResults(partialResults: Bundle?) {
+            val text = bestHypothesis(partialResults)
+            emitWordsFromHypothesis(text)
+            notifyDebugChanged()
+        }
+
+        override fun onEvent(eventType: Int, params: Bundle?) {}
+    }
+
+    private fun emitWordsFromHypothesis(hypothesis: String) {
         if (destroyed) return
-        if (!Settings.canDrawOverlays(this)) {
-            overlayAttached = false
-            notifyOverlayDebugMayHaveChanged()
-            return
+        val raw = hypothesis.trim()
+        val words = if (raw.isEmpty()) {
+            emptyList()
+        } else {
+            raw.split(wordSplitRegex).filter { it.isNotEmpty() }
         }
-        if (overlayRoot != null) return
-
-        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        windowManager = wm
-
-        val root = LayoutInflater.from(this).inflate(
-            R.layout.overlay_voice_capture,
-            null,
-            false
-        ) as FrameLayout
-        val edit = root.findViewById<EditText>(R.id.overlay_voice_input)
-        voiceTextWatcher.reset()
-
-        val type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        val flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            type,
-            flags,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 0
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
-                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
-            title = getString(R.string.notification_title)
+        when {
+            words.size > sessionEmittedWords.size -> {
+                sendPayload(words.last())
+            }
+            words.size == sessionEmittedWords.size &&
+                words.isNotEmpty() &&
+                words.last() != sessionEmittedWords.last() -> {
+                sendPayload(DELTA_PREFIX + words.last())
+            }
         }
-
-        edit.addTextChangedListener(voiceTextWatcher)
-        edit.setOnFocusChangeListener { _, hasFocus ->
-            overlayEditHasFocus = hasFocus
-            notifyOverlayDebugMayHaveChanged()
-        }
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            overlayImeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
-            notifyOverlayDebugMayHaveChanged()
-            insets
-        }
-
-        try {
-            wm.addView(root, params)
-        } catch (_: WindowManager.BadTokenException) {
-            overlayRoot = null
-            overlayEdit = null
-            overlayAttached = false
-            notifyOverlayDebugMayHaveChanged()
-            return
-        }
-
-        overlayRoot = root
-        overlayEdit = edit
-        overlayAttached = true
-        edit.post {
-            edit.requestFocus()
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT)
-            notifyOverlayDebugMayHaveChanged()
-        }
-        notifyOverlayDebugMayHaveChanged()
+        sessionEmittedWords = words
     }
 
-    private fun detachVoiceOverlay() {
-        val root = overlayRoot ?: return
-        val edit = overlayEdit
-        edit?.removeTextChangedListener(voiceTextWatcher)
-        edit?.setOnFocusChangeListener(null)
-        try {
-            windowManager?.removeView(root)
-        } catch (_: IllegalArgumentException) {
+    private fun bestHypothesis(bundle: Bundle?): String {
+        val matches = bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            ?: return ""
+        if (matches.isEmpty()) return ""
+        val scores = bundle.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+        if (scores != null && scores.size == matches.size) {
+            val idx = scores.indices.maxByOrNull { scores[it] } ?: 0
+            return matches[idx]
         }
-        overlayRoot = null
-        overlayEdit = null
-        overlayAttached = false
-        overlayEditHasFocus = false
-        overlayImeVisible = false
-        voiceTextWatcher.reset()
-        notifyOverlayDebugMayHaveChanged()
+        return matches[0]
     }
 
-    private fun notifyOverlayDebugMayHaveChanged() {
+    private fun speechErrorToString(error: Int): String {
+        val name = when (error) {
+            SpeechRecognizer.ERROR_AUDIO -> "ERROR_AUDIO"
+            SpeechRecognizer.ERROR_CLIENT -> "ERROR_CLIENT"
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "ERROR_INSUFFICIENT_PERMISSIONS"
+            SpeechRecognizer.ERROR_NETWORK -> "ERROR_NETWORK"
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "ERROR_NETWORK_TIMEOUT"
+            SpeechRecognizer.ERROR_NO_MATCH -> "ERROR_NO_MATCH"
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "ERROR_RECOGNIZER_BUSY"
+            SpeechRecognizer.ERROR_SERVER -> "ERROR_SERVER"
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "ERROR_SPEECH_TIMEOUT"
+            else -> "UNKNOWN"
+        }
+        return "$name ($error)"
+    }
+
+    private fun notifyDebugChanged() {
         mainHandler.post {
-            connectionListener?.onVoiceOverlayDebugMayHaveChanged()
+            connectionListener?.onVoiceDebugMayHaveChanged()
         }
     }
 
@@ -303,34 +409,6 @@ class VoiceRemoteService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .build()
-    }
-
-    private inner class VoicePayloadTextWatcher : TextWatcher {
-        private var lastWords: List<String> = emptyList()
-        private val wordSplitRegex = Regex("\\s+")
-
-        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-
-        override fun afterTextChanged(s: Editable?) {
-            if (destroyed) return
-            val raw = s?.toString() ?: ""
-            val words = raw.trim().split(wordSplitRegex).filter { it.isNotEmpty() }
-
-            when {
-                words.size > lastWords.size -> {
-                    sendPayload(words.last())
-                }
-                words.size == lastWords.size && words.isNotEmpty() && words.last() != lastWords.last() -> {
-                    sendPayload(DELTA_PREFIX + words.last())
-                }
-            }
-            lastWords = words
-        }
-
-        fun reset() {
-            lastWords = emptyList()
-        }
     }
 
     companion object {

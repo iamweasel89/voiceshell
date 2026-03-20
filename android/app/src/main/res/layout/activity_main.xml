@@ -74,7 +74,7 @@
             android:letterSpacing="0.05" />
 
         <TextView
-            android:id="@+id/debug_focus_value"
+            android:id="@+id/debug_recognition_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -82,7 +82,7 @@
             android:textSize="14sp" />
 
         <TextView
-            android:id="@+id/debug_ime_value"
+            android:id="@+id/debug_error_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -90,14 +90,14 @@
             android:textSize="14sp" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/debug_request_focus"
+            android:id="@+id/debug_restart_recognition"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:minWidth="0dp"
             android:paddingHorizontal="8dp"
-            android:text="@string/debug_request_focus"
+            android:text="@string/debug_restart_recognition"
             android:textColor="@color/status_text_primary"
             android:textSize="14sp" />
     </LinearLayout>

@@ -9,13 +9,14 @@
     <string name="status_connecting">Connecting…</string>
     <string name="status_disconnected">Disconnected</string>
     <string name="notification_title">VoiceShell remote</string>
-    <string name="notification_text">Forwarding voice input</string>
+    <string name="notification_text">SpeechRecognizer — forwarding words</string>
     <string name="channel_name">Voice input</string>
-    <string name="debug_yes">yes</string>
-    <string name="debug_no">no</string>
     <string name="debug_section_title">Debug</string>
-    <string name="debug_edit_focus">Overlay EditText has focus: %1$s</string>
-    <string name="debug_overlay_missing">Overlay not shown — grant “Display over other apps”</string>
-    <string name="debug_soft_keyboard">Soft keyboard (Gboard) shown: %1$s</string>
-    <string name="debug_request_focus">Request Focus</string>
+    <string name="debug_speech_listening">Speech session: active (mic open)</string>
+    <string name="debug_speech_idle">Speech session: between cycles</string>
+    <string name="debug_speech_stopped">Speech: service stopped</string>
+    <string name="debug_speech_unavailable">SpeechRecognizer not available on this device</string>
+    <string name="debug_last_error">Last recognizer error: %1$s</string>
+    <string name="debug_no_error">Last recognizer error: none</string>
+    <string name="debug_restart_recognition">Restart recognition</string>
 </resources>

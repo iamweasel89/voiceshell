@@ -6,11 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import android.provider.Settings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -27,16 +25,6 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
         ActivityResultContracts.RequestMultiplePermissions()
     ) { granted ->
         if (granted.values.all { it }) {
-            tryStartAfterRuntimePermissions()
-        } else {
-            updateUiForStopped()
-        }
-    }
-
-    private val overlaySettingsLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        if (Settings.canDrawOverlays(this)) {
             startRemote()
         } else {
             updateUiForStopped()
@@ -48,9 +36,6 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
             val s = (binder as VoiceRemoteService.LocalBinder).getService()
             voiceService = s
             s.connectionListener = this@MainActivity
-            if (serviceRunning) {
-                s.requestOverlayFocusAndShowIme()
-            }
             updateDebugPanel()
         }
 
@@ -72,10 +57,9 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
             if (serviceRunning) stopRemote() else requestStart()
         }
 
-        binding.debugRequestFocus.setOnClickListener {
-            voiceService?.requestOverlayFocusAndShowIme()
-            binding.root.postDelayed({ updateDebugPanel() }, 100)
-            binding.root.postDelayed({ updateDebugPanel() }, 400)
+        binding.debugRestartRecognition.setOnClickListener {
+            voiceService?.restartSpeechRecognition()
+            binding.root.postDelayed({ updateDebugPanel() }, 150)
         }
 
         if (serviceRunning) {
@@ -122,16 +106,6 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (serviceRunning) {
-            binding.root.post {
-                voiceService?.requestOverlayFocusAndShowIme()
-                updateDebugPanel()
-            }
-        }
-    }
-
     override fun onConnectionChanged(connected: Boolean, message: String?) {
         if (!serviceRunning) return
         val dotColor = if (connected) R.color.status_dot_connected else R.color.status_dot_idle
@@ -143,7 +117,7 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
         }
     }
 
-    override fun onVoiceOverlayDebugMayHaveChanged() {
+    override fun onVoiceDebugMayHaveChanged() {
         updateDebugPanel()
     }
 
@@ -163,28 +137,11 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
         if (need.isNotEmpty()) {
             permissionLauncher.launch(need.toTypedArray())
         } else {
-            tryStartAfterRuntimePermissions()
-        }
-    }
-
-    private fun tryStartAfterRuntimePermissions() {
-        if (!Settings.canDrawOverlays(this)) {
-            overlaySettingsLauncher.launch(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-            )
-        } else {
             startRemote()
         }
     }
 
     private fun startRemote() {
-        if (!Settings.canDrawOverlays(this)) {
-            updateUiForStopped()
-            return
-        }
         val intent = Intent(this, VoiceRemoteService::class.java)
         ContextCompat.startForegroundService(this, intent)
         serviceRunning = true
@@ -195,10 +152,7 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
         binding.toggle.text = getString(R.string.stop)
         binding.statusDot.setTextColor(ContextCompat.getColor(this, R.color.status_dot_connecting))
         binding.statusLabel.text = getString(R.string.status_connecting)
-        binding.root.post {
-            voiceService?.requestOverlayFocusAndShowIme()
-            updateDebugPanel()
-        }
+        binding.root.post { updateDebugPanel() }
     }
 
     private fun stopRemote() {
@@ -224,26 +178,19 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
     }
 
     private fun updateDebugPanel() {
-        val yes = getString(R.string.debug_yes)
-        val no = getString(R.string.debug_no)
         val svc = voiceService
         if (serviceRunning && svc != null) {
-            if (!svc.overlayAttached) {
-                binding.debugFocusValue.text = getString(R.string.debug_overlay_missing)
-                binding.debugImeValue.text = getString(R.string.debug_soft_keyboard, no)
-            } else {
-                binding.debugFocusValue.text = getString(
-                    R.string.debug_edit_focus,
-                    if (svc.overlayEditHasFocus) yes else no
-                )
-                binding.debugImeValue.text = getString(
-                    R.string.debug_soft_keyboard,
-                    if (svc.overlayImeVisible) yes else no
-                )
+            binding.debugRecognitionValue.text = when {
+                !svc.speechRecognitionAvailable -> getString(R.string.debug_speech_unavailable)
+                svc.isRecognizerInSession -> getString(R.string.debug_speech_listening)
+                else -> getString(R.string.debug_speech_idle)
             }
+            binding.debugErrorValue.text = svc.lastRecognizerError?.let { err ->
+                getString(R.string.debug_last_error, err)
+            } ?: getString(R.string.debug_no_error)
         } else {
-            binding.debugFocusValue.text = getString(R.string.debug_edit_focus, no)
-            binding.debugImeValue.text = getString(R.string.debug_soft_keyboard, no)
+            binding.debugRecognitionValue.text = getString(R.string.debug_speech_stopped)
+            binding.debugErrorValue.text = getString(R.string.debug_no_error)
         }
     }
 
