@@ -1,0 +1,56 @@
+{
+  "project": "voiceshell",
+  "repository": "git@github.com:iamweasel89/voiceshell.git",
+  "machines": {
+    "remote": {
+      "name": "DESKTOP-509IIOE",
+      "os": "Windows 10 Home 10.0.19045",
+      "cpu": "Intel Core i7-3610QM @ 2.30GHz",
+      "ram": "8GB",
+      "tailscale_ip": "100.107.205.27",
+      "users": {
+        "main": "onexb",
+        "ssh": "sshuser"
+      },
+      "ssh": "ssh sshuser@100.107.205.27",
+      "password_sshuser": "mX7#kL2",
+      "project_path": "C:/Users/sshuser/voiceshell",
+      "github_key": "C:/Users/sshuser/.ssh/id_github",
+      "node": "v25.8.1",
+      "git": "2.53",
+      "pm2": true,
+      "pm2_processes": ["server", "contour-text"]
+    },
+    "local": {
+      "name": "WINDOWS-3TM8VSU",
+      "os": "Windows 11 Home",
+      "cpu": "Intel Pentium Silver N5030 @ 1.10GHz",
+      "ram": "12GB",
+      "tailscale_ip": "100.104.249.65",
+      "user": "user",
+      "ssh": "not configured",
+      "project_path": "C:/Users/user/Documents/voiceshell",
+      "github_key": "C:/Users/user/.ssh/id_github",
+      "node": "v24.13.0",
+      "git": "2.52"
+    },
+    "mobile": {
+      "model": "Motorola Moto G15 Power",
+      "cpu": "MediaTek Helio G81 Extreme (12nm)",
+      "ram": "8GB",
+      "storage": "512GB",
+      "battery": "6000mAh",
+      "os": "Android 15",
+      "tailscale_ip": "100.117.173.10",
+      "ssh_client": "Termius",
+      "browser": "Chrome",
+      "nucleus_url": "http://100.107.205.27:8080"
+    }
+  },
+  "github": {
+    "keys": {
+      "remote-pc-sshuser": "AAAAC3NzaC1lZDI1NTE5AAAAIKTMU7QYXBxyTsoog8Ykypi72HdV0By0qZCmdfjcsZsm",
+      "local-pc": "AAAAC3NzaC1lZDI1NTE5AAAAINDed1rnbMlsYYRBdQE9zs9ag3OnonUPm2fXNzXZwdQH"
+    }
+  }
+}

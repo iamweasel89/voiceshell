@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ядрышко</title>
+<style>
+  body { font-family: monospace; padding: 20px; background: #111; color: #eee; }
+  #input { width: 100%; font-size: 18px; padding: 10px; background: #222; color: #fff; border: 1px solid #444; border-radius: 6px; box-sizing: border-box; }
+  #status { margin-top: 10px; font-size: 13px; }
+  .ok  { color: #4fc3f7; }
+  .err { color: #ef5350; }
+  #log { margin-top: 20px; max-height: 220px; overflow-y: scroll; }
+  .word { padding: 4px 8px; margin: 3px 0; background: #1a1a2e; border-left: 3px solid #4fc3f7; font-size: 15px; }
+  .word span { color: #888; font-size: 12px; margin-left: 10px; }
+  #stats { margin-top: 10px; color: #aaa; font-size: 13px; }
+  .section { margin-top: 20px; }
+  .section-title { font-size: 12px; text-transform: uppercase; color: #666; letter-spacing: 1px; margin-bottom: 8px; }
+  #nucleus-word { font-size: 64px; font-weight: bold; color: #4fc3f7; min-height: 80px; line-height: 1.1; }
+  #nucleus-interval { font-size: 14px; color: #888; margin-top: 4px; }
+  #contour-text { font-size: 18px; color: #ddd; min-height: 60px; line-height: 1.6; word-break: break-word; }
+  #clear-btn { margin-top: 10px; padding: 6px 16px; background: #333; color: #aaa; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 13px; }
+  #clear-btn:hover { background: #444; color: #fff; }
+</style>
+</head>
+<body>
+
+<input id="input" type="text" placeholder="Говорите..." autocomplete="off" />
+<div id="status" class="err">● Нет соединения</div>
+<div id="stats">Слов: 0 | Мин. интервал: —</div>
+
+<div class="section">
+  <div class="section-title">Nucleus</div>
+  <div id="nucleus-word">—</div>
+  <div id="nucleus-interval">Min interval: —</div>
+</div>
+
+<div class="section">
+  <div class="section-title">Contour</div>
+  <div id="contour-text"></div>
+  <button id="clear-btn">Clear</button>
+</div>
+
+<div id="log"></div>
+
+<script>
+  const input       = document.getElementById('input');
+  const statusEl    = document.getElementById('status');
+  const log         = document.getElementById('log');
+  const statsEl     = document.getElementById('stats');
+  const nucleusWord = document.getElementById('nucleus-word');
+  const nucleusInt  = document.getElementById('nucleus-interval');
+  const contourText = document.getElementById('contour-text');
+  document.getElementById('clear-btn').addEventListener('click', () => { contourText.textContent = ''; });
+
+  const WS_URL = 'ws://' + location.hostname + ':8080';
+  let ws = null;
+  let wordCount = 0, lastTime = null, minInterval = Infinity;
+  let lastWords = [];
+
+  function connect() {
+    ws = new WebSocket(WS_URL);
+    ws.onopen  = () => { statusEl.textContent = '● Подключено'; statusEl.className = 'ok'; };
+    ws.onclose = () => { statusEl.textContent = '● Нет соединения'; statusEl.className = 'err'; setTimeout(connect, 2000); };
+    ws.onerror = () => ws.close();
+  }
+  connect();
+
+  input.addEventListener('input', () => {
+    const words = input.value.trim().split(/\s+/).filter(Boolean);
+
+    if (words.length > lastWords.length) {
+      const word = words[words.length - 1];
+      const now  = performance.now();
+
+      let interval = null;
+      if (lastTime !== null) {
+        interval = now - lastTime;
+        if (interval < minInterval) minInterval = interval;
+      }
+      lastTime = now;
+      wordCount++;
+
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(word);
+
+      const div = document.createElement('div');
+      div.className = 'word';
+      div.innerHTML = word + '<span>' + new Date().toLocaleTimeString('ru', {hour12:false}) +
+        (interval ? ' | +' + interval.toFixed(0) + 'ms' : '') + '</span>';
+      log.prepend(div);
+
+      statsEl.textContent = 'Слов: ' + wordCount +
+        ' | Мин. интервал: ' + (minInterval === Infinity ? '—' : minInterval.toFixed(0) + 'ms');
+
+      nucleusWord.textContent = word;
+      nucleusInt.textContent  = 'Min interval: ' + (minInterval === Infinity ? '—' : minInterval.toFixed(0) + 'ms');
+
+      contourText.textContent = (contourText.textContent ? contourText.textContent + ' ' : '') + word;
+    }
+    lastWords = words;
+  });
+</script>
+</body>
+</html>
