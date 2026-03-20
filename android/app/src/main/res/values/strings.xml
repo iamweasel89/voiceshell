@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VoiceShell Remote</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="status_idle">● Idle</string>
+    <string name="status_connected">● Connected</string>
+    <string name="status_connecting">● Connecting…</string>
+    <string name="status_disconnected">● Disconnected</string>
+    <string name="notification_title">VoiceShell remote</string>
+    <string name="notification_text">Forwarding voice input</string>
+    <string name="channel_name">Voice input</string>
+</resources>
