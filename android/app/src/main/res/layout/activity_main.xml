@@ -65,9 +65,19 @@
         app:layout_constraintTop_toBottomOf="@id/toggle">
 
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/debug_section_title"
+            android:textColor="@color/status_text_primary"
+            android:textSize="12sp"
+            android:textAllCaps="true"
+            android:letterSpacing="0.05" />
+
+        <TextView
             android:id="@+id/debug_focus_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:textColor="@color/status_text_secondary"
             android:textSize="14sp" />
 

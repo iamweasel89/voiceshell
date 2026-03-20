@@ -79,6 +79,9 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
             binding.voiceInput.requestFocus()
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showSoftInput(binding.voiceInput, InputMethodManager.SHOW_IMPLICIT)
+            updateDebugPanel()
+            binding.root.postDelayed({ syncImeVisibleFromInsets(); updateDebugPanel() }, 100)
+            binding.root.postDelayed({ syncImeVisibleFromInsets(); updateDebugPanel() }, 400)
         }
 
         if (serviceRunning) {
@@ -117,6 +120,14 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
             bound = false
         }
         super.onStop()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            syncImeVisibleFromInsets()
+            updateDebugPanel()
+        }
     }
 
     override fun onResume() {

@@ -11,9 +11,10 @@
     <string name="notification_title">VoiceShell remote</string>
     <string name="notification_text">Forwarding voice input</string>
     <string name="channel_name">Voice input</string>
-    <string name="debug_yes">Yes</string>
-    <string name="debug_no">No</string>
+    <string name="debug_yes">yes</string>
+    <string name="debug_no">no</string>
+    <string name="debug_section_title">Debug</string>
     <string name="debug_edit_focus">Hidden EditText has focus: %1$s</string>
-    <string name="debug_soft_keyboard">Soft keyboard (IME) shown: %1$s</string>
-    <string name="debug_request_focus">Request focus</string>
+    <string name="debug_soft_keyboard">Soft keyboard (Gboard) shown: %1$s</string>
+    <string name="debug_request_focus">Request Focus</string>
 </resources>
