@@ -15,6 +15,8 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import io.github.iamweasel89.voiceshell.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener {
@@ -26,6 +28,7 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
 
     private val voiceTextWatcher = VoiceTextWatcher()
     private val wordSplitRegex = Regex("\\s+")
+    private var imeVisible = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -64,9 +67,26 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
 
         binding.voiceInput.addTextChangedListener(voiceTextWatcher)
 
+        binding.voiceInput.setOnFocusChangeListener { _, _ -> updateDebugPanel() }
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            updateDebugPanel()
+            insets
+        }
+
+        binding.debugRequestFocus.setOnClickListener {
+            binding.voiceInput.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(binding.voiceInput, InputMethodManager.SHOW_IMPLICIT)
+        }
+
         if (serviceRunning) {
             binding.toggle.text = getString(R.string.stop)
         }
+
+        syncImeVisibleFromInsets()
+        updateDebugPanel()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -104,6 +124,8 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
         binding.voiceInput.post {
             binding.voiceInput.requestFocus()
             if (serviceRunning) showKeyboard()
+            syncImeVisibleFromInsets()
+            updateDebugPanel()
         }
     }
 
@@ -181,6 +203,24 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
     private fun showKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.showSoftInput(binding.voiceInput, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun syncImeVisibleFromInsets() {
+        val insets = ViewCompat.getRootWindowInsets(binding.root)
+        imeVisible = insets?.isVisible(WindowInsetsCompat.Type.ime()) == true
+    }
+
+    private fun updateDebugPanel() {
+        val yes = getString(R.string.debug_yes)
+        val no = getString(R.string.debug_no)
+        binding.debugFocusValue.text = getString(
+            R.string.debug_edit_focus,
+            if (binding.voiceInput.hasFocus()) yes else no
+        )
+        binding.debugImeValue.text = getString(
+            R.string.debug_soft_keyboard,
+            if (imeVisible) yes else no
+        )
     }
 
     private inner class VoiceTextWatcher : TextWatcher {
