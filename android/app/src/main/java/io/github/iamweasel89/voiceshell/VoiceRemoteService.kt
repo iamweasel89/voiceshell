@@ -15,6 +15,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.speech.RecognitionListener
+import android.util.Log
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.app.NotificationCompat
@@ -138,12 +139,14 @@ class VoiceRemoteService : Service() {
     }
 
     fun sendPayload(text: String) {
+        logVoiceEvent("WORD_SENT", text)
         webSocket?.send(text)
     }
 
     /** Recreate the engine and resume the listen loop (e.g. after ERROR_CLIENT or stuck state). */
     fun restartSpeechRecognition() {
         mainHandler.post {
+            logVoiceEvent("RECOGNITION_RESTART", "explicit")
             if (destroyed) return@post
             runCatching { speechRecognizer?.stopListening() }
             runCatching { speechRecognizer?.destroy() }
@@ -212,12 +215,14 @@ class VoiceRemoteService : Service() {
         }.onFailure {
             lastRecognizerError = it.message ?: "startListening failed"
             notifyDebugChanged()
+            logVoiceEvent("RECOGNITION_RESTART", "delayMs=500 after startListening failed")
             scheduleStartListening(500)
         }
     }
 
     private val recognitionListener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
+            logVoiceEvent("RECOGNITION_START", "")
             isRecognizerInSession = true
             lastRecognizerError = null
             notifyDebugChanged()
@@ -252,6 +257,7 @@ class VoiceRemoteService : Service() {
                 else -> 120L
             }
             if (speechRecognitionActive && error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                logVoiceEvent("RECOGNITION_RESTART", "delayMs=$delay after error=$error")
                 scheduleStartListening(delay)
             }
         }
@@ -259,16 +265,19 @@ class VoiceRemoteService : Service() {
         override fun onResults(results: Bundle?) {
             isRecognizerInSession = false
             val text = bestHypothesis(results)
+            logVoiceEvent("FINAL_RESULT", text)
             emitWordsFromHypothesis(text)
             sessionEmittedWords = emptyList()
             notifyDebugChanged()
             if (speechRecognitionActive) {
+                logVoiceEvent("RECOGNITION_RESTART", "delayMs=80 after final result")
                 scheduleStartListening(80)
             }
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
             val text = bestHypothesis(partialResults)
+            logVoiceEvent("PARTIAL_RESULT", text)
             emitWordsFromHypothesis(text)
             notifyDebugChanged()
         }
@@ -329,6 +338,10 @@ class VoiceRemoteService : Service() {
         mainHandler.post {
             connectionListener?.onVoiceDebugMayHaveChanged()
         }
+    }
+
+    private fun logVoiceEvent(event: String, data: String) {
+        Log.d(LOG_TAG, "[${System.currentTimeMillis()}] $event: $data")
     }
 
     private fun connectWebSocket() {
@@ -412,6 +425,7 @@ class VoiceRemoteService : Service() {
     }
 
     companion object {
+        private const val LOG_TAG = "VoiceRemoteService"
         const val DEFAULT_WS_URL = "ws://100.107.205.27:8080"
         private const val CHANNEL_ID = "voiceshell_voice"
         private const val NOTIFICATION_ID = 42
