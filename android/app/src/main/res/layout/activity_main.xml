@@ -5,27 +5,53 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <TextView
-        android:id="@+id/status"
+    <LinearLayout
+        android:id="@+id/status_row"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="48dp"
-        android:text="@string/status_idle"
-        android:textColor="@color/status_disconnected"
-        android:textSize="16sp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent">
 
-    <Button
+        <TextView
+            android:id="@+id/status_dot"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:text="@string/status_bullet"
+            android:textColor="@color/status_dot_idle"
+            android:textSize="20sp" />
+
+        <TextView
+            android:id="@+id/status_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="@string/status_idle"
+            android:textColor="@color/status_text_secondary"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/toggle"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="32dp"
+        android:minWidth="160dp"
+        android:paddingHorizontal="24dp"
         android:text="@string/start"
+        android:textColor="@color/status_text_primary"
+        android:textSize="16sp"
+        app:cornerRadius="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/status" />
+        app:layout_constraintTop_toBottomOf="@id/status_row"
+        app:strokeColor="@color/status_text_secondary"
+        app:strokeWidth="2dp" />
 
     <!-- Gboard needs a focused field; keep present but visually hidden -->
     <EditText

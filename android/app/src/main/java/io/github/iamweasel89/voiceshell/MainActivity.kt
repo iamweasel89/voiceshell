@@ -109,14 +109,13 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
 
     override fun onConnectionChanged(connected: Boolean, message: String?) {
         if (!serviceRunning) return
-        val color = if (connected) R.color.status_connected else R.color.status_disconnected
-        val label = when {
+        val dotColor = if (connected) R.color.status_dot_connected else R.color.status_dot_idle
+        binding.statusDot.setTextColor(ContextCompat.getColor(this, dotColor))
+        binding.statusLabel.text = when {
             connected -> getString(R.string.status_connected)
             message != null -> getString(R.string.status_disconnected) + " ($message)"
             else -> getString(R.string.status_disconnected)
         }
-        binding.status.setTextColor(ContextCompat.getColor(this, color))
-        binding.status.text = label
     }
 
     private fun requestStart() {
@@ -149,8 +148,8 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
         }
         voiceTextWatcher.reset()
         binding.toggle.text = getString(R.string.stop)
-        binding.status.text = getString(R.string.status_connecting)
-        binding.status.setTextColor(ContextCompat.getColor(this, R.color.status_disconnected))
+        binding.statusDot.setTextColor(ContextCompat.getColor(this, R.color.status_dot_connecting))
+        binding.statusLabel.text = getString(R.string.status_connecting)
         binding.voiceInput.post {
             binding.voiceInput.requestFocus()
             showKeyboard()
@@ -175,8 +174,8 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
 
     private fun updateUiForStopped() {
         binding.toggle.text = getString(R.string.start)
-        binding.status.text = getString(R.string.status_idle)
-        binding.status.setTextColor(ContextCompat.getColor(this, R.color.status_disconnected))
+        binding.statusDot.setTextColor(ContextCompat.getColor(this, R.color.status_dot_idle))
+        binding.statusLabel.text = getString(R.string.status_idle)
     }
 
     private fun showKeyboard() {
