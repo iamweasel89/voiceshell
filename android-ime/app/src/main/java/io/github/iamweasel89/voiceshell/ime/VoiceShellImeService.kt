@@ -223,10 +223,6 @@ class VoiceShellImeService : InputMethodService() {
         }
     }
 
-    /**
-     * Deletes one word immediately before the cursor: skips trailing whitespace, then removes
-     * the contiguous non-whitespace run (or word) before that.
-     */
     /** Removes the last committed segment (word + trailing space) before the cursor. */
     private fun deleteLastCommittedSegment(ic: InputConnection) {
         val len = committedWordLengths.removeLastOrNull()
@@ -235,16 +231,20 @@ class VoiceShellImeService : InputMethodService() {
         if (len > 0) ic.deleteSurroundingText(len, 0)
     }
 
+    /**
+     * Deletes the word immediately before the cursor, including any whitespace after that word
+     * up to the cursor (e.g. the trailing space from [commitText]). Uses [getTextBeforeCursor]
+     * so the delete range matches the field’s actual contents.
+     */
     private fun deletePreviousWord(ic: InputConnection) {
         val buf = ic.getTextBeforeCursor(4096, 0)?.toString() ?: return
         if (buf.isEmpty()) return
         var i = buf.length - 1
         while (i >= 0 && buf[i].isWhitespace()) i--
         if (i < 0) return
-        val wordEndExclusive = i + 1
         while (i >= 0 && !buf[i].isWhitespace()) i--
         val wordStart = i + 1
-        val len = wordEndExclusive - wordStart
+        val len = buf.length - wordStart
         if (len > 0) ic.deleteSurroundingText(len, 0)
     }
 
