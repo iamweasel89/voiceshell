@@ -143,7 +143,7 @@ class VoiceShellImeService : InputMethodService() {
                                     ).show()
                                     deleteLastCommittedSegment(ic)
                                     deletePreviousWord(ic)
-                                    lastWord = newWord
+                                    lastWord = ""
                                     return@post
                                 }
                                 CMD_CLEAR_ALL_1, CMD_CLEAR_ALL_2 -> {
@@ -159,7 +159,7 @@ class VoiceShellImeService : InputMethodService() {
                                         ic.getTextAfterCursor(FIELD_TEXT_MAX_CHARS, 0)?.length ?: 0
                                     ic.deleteSurroundingText(beforeLen, afterLen)
                                     committedWordLengths.clear()
-                                    lastWord = newWord
+                                    lastWord = ""
                                     return@post
                                 }
                                 else -> { /* insert below */ }
