@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VoiceShell IME</string>
+    <string name="ime_name">VoiceShell keyboard</string>
+    <string name="ime_subtype_label">English (US)</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Disconnected</string>
+</resources>
