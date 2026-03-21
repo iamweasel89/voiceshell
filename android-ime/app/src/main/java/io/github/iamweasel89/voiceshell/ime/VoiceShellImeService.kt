@@ -30,6 +30,12 @@ class VoiceShellImeService : InputMethodService() {
 
     private var statusDot: View? = null
 
+    /**
+     * Characters to delete before the cursor for the last committed segment: last word plus the
+     * trailing space from [commitText] (so [deleteSurroundingText] removes the whole insertion).
+     */
+    private var lastWordLength: Int = 0
+
     private val reconnectRunnable = Runnable {
         if (!destroyed.get() && webSocket == null) connectWebSocket()
     }
@@ -102,7 +108,23 @@ class VoiceShellImeService : InputMethodService() {
                     if (word.isEmpty()) return
                     if (shouldIgnoreMessage(word)) return
                     mainHandler.post {
-                        currentInputConnection?.commitText("$word ", 1)
+                        val ic = currentInputConnection ?: return@post
+                        when (word) {
+                            CMD_DELETE_LAST_WORD -> {
+                                if (lastWordLength <= 0) return@post
+                                ic.deleteSurroundingText(lastWordLength, 0)
+                                lastWordLength = 0
+                            }
+                            CMD_CLEAR_ALL -> {
+                                ic.performContextMenuAction(android.R.id.selectAll)
+                                ic.commitText("", 1)
+                                lastWordLength = 0
+                            }
+                            else -> {
+                                ic.commitText("$word ", 1)
+                                lastWordLength = word.length + 1
+                            }
+                        }
                     }
                 }
             }
@@ -146,5 +168,7 @@ class VoiceShellImeService : InputMethodService() {
 
     companion object {
         private const val WS_URL = "ws://100.107.205.27:8080"
+        private const val CMD_DELETE_LAST_WORD = "убери слово"
+        private const val CMD_CLEAR_ALL = "убери полностью"
     }
 }
