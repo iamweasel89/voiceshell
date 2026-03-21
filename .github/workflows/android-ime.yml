@@ -1,0 +1,42 @@
+name: Android IME APK
+
+on:
+  push:
+    paths:
+      - 'android-ime/**'
+      - '.github/workflows/android-ime.yml'
+  pull_request:
+    paths:
+      - 'android-ime/**'
+      - '.github/workflows/android-ime.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-ime
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            android-ime/*.gradle.kts
+            android-ime/app/*.gradle.kts
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Assemble release APK
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ime-release
+          path: android-ime/app/build/outputs/apk/release/*.apk
