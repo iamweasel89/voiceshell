@@ -2,6 +2,7 @@ package io.github.iamweasel89.voiceshell.ime
 
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
+import android.view.inputmethod.InputConnection
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -120,26 +121,53 @@ class VoiceShellImeService : InputMethodService() {
                     mainHandler.post {
                         val ic = currentInputConnection ?: return@post
 
-                        val normalized = normalizeCommand(text)
+                        val word = text.trim()
+                        if (word.isEmpty()) return@post
 
-                        when (normalized) {
-                            "убери слово" -> {
-                                Toast.makeText(this@VoiceShellImeService, "CMD: delete last word", Toast.LENGTH_SHORT).show()
-                                val len = committedWordLengths.removeLastOrNull() ?: return@post
-                                ic.deleteSurroundingText(len, 0)
+                        Toast.makeText(this@VoiceShellImeService, "INSERT: '$word'", Toast.LENGTH_SHORT).show()
+                        ic.commitText("$word ", 1)
+
+                        val committedFullLength = word.length + 1
+                        val readBack = ic.getTextBeforeCursor(committedFullLength, 0) ?: return@post
+                        if (readBack.length < committedFullLength) {
+                            committedWordLengths.addLast(committedFullLength)
+                            return@post
+                        }
+                        val insertedSegment = readBack.subSequence(
+                            readBack.length - committedFullLength,
+                            readBack.length
+                        ).toString()
+                        if (insertedSegment != "$word ") {
+                            committedWordLengths.addLast(committedFullLength)
+                            return@post
+                        }
+
+                        when (insertedSegment.trim().lowercase()) {
+                            CMD_DELETE_LAST_WORD -> {
+                                Toast.makeText(
+                                    this@VoiceShellImeService,
+                                    "CMD: delete last word",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                val deleteCmdLen = insertedSegment.length
+                                ic.deleteSurroundingText(deleteCmdLen, 0)
+                                deletePreviousWord(ic)
                             }
-                            "убери полностью" -> {
-                                Toast.makeText(this@VoiceShellImeService, "CMD: clear all", Toast.LENGTH_SHORT).show()
+                            CMD_CLEAR_ALL -> {
+                                Toast.makeText(
+                                    this@VoiceShellImeService,
+                                    "CMD: clear all",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                val beforeLen =
+                                    ic.getTextBeforeCursor(FIELD_TEXT_MAX_CHARS, 0)?.length ?: 0
+                                val afterLen =
+                                    ic.getTextAfterCursor(FIELD_TEXT_MAX_CHARS, 0)?.length ?: 0
+                                ic.deleteSurroundingText(beforeLen, afterLen)
                                 committedWordLengths.clear()
-                                ic.performContextMenuAction(android.R.id.selectAll)
-                                ic.commitText("", 1)
                             }
                             else -> {
-                                val word = text.trim()
-                                if (word.isEmpty()) return@post
-                                Toast.makeText(this@VoiceShellImeService, "INSERT: '$word'", Toast.LENGTH_SHORT).show()
-                                ic.commitText("$word ", 1)
-                                committedWordLengths.addLast(word.length + 1)
+                                committedWordLengths.addLast(committedFullLength)
                             }
                         }
                     }
@@ -177,8 +205,21 @@ class VoiceShellImeService : InputMethodService() {
         }
     }
 
-    private fun normalizeCommand(text: String): String {
-        return text.trim().lowercase()
+    /**
+     * Deletes one word immediately before the cursor: skips trailing whitespace, then removes
+     * the contiguous non-whitespace run (or word) before that.
+     */
+    private fun deletePreviousWord(ic: InputConnection) {
+        val buf = ic.getTextBeforeCursor(4096, 0)?.toString() ?: return
+        if (buf.isEmpty()) return
+        var i = buf.length - 1
+        while (i >= 0 && buf[i].isWhitespace()) i--
+        if (i < 0) return
+        val wordEndExclusive = i + 1
+        while (i >= 0 && !buf[i].isWhitespace()) i--
+        val wordStart = i + 1
+        val len = wordEndExclusive - wordStart
+        if (len > 0) ic.deleteSurroundingText(len, 0)
     }
 
     private fun circleDrawable(color: Int): GradientDrawable {
@@ -192,5 +233,7 @@ class VoiceShellImeService : InputMethodService() {
         private const val WS_URL = "ws://100.107.205.27:8080"
         private const val CMD_DELETE_LAST_WORD = "убери слово"
         private const val CMD_CLEAR_ALL = "убери полностью"
+        /** Upper bound for [InputConnection.getTextBeforeCursor] / [getTextAfterCursor] when clearing the field. */
+        private const val FIELD_TEXT_MAX_CHARS = 512_000
     }
 }
