@@ -105,10 +105,11 @@ class VoiceShellImeService : InputMethodService() {
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    if (shouldIgnoreMessage(text.trim())) return
+                    val trimmed = text.trim()
+                    if (shouldIgnoreMessage(trimmed)) return
                     mainHandler.post {
                         val ic = currentInputConnection ?: return@post
-                        when (text) {
+                        when (trimmed) {
                             CMD_DELETE_LAST_WORD -> {
                                 val len = committedWordLengths.removeLastOrNull() ?: return@post
                                 ic.deleteSurroundingText(len, 0)
@@ -119,7 +120,7 @@ class VoiceShellImeService : InputMethodService() {
                                 ic.commitText("", 1)
                             }
                             else -> {
-                                val word = text.trim()
+                                val word = trimmed
                                 if (word.isEmpty()) return@post
                                 ic.commitText("$word ", 1)
                                 committedWordLengths.addLast(word.length + 1)
@@ -149,11 +150,12 @@ class VoiceShellImeService : InputMethodService() {
         statusDot?.background = circleDrawable(dotColor)
     }
 
-    /** `server.js` broadcasts `{"type":"clipboard","text":"..."}`; plain words are raw text. */
+    /** `server.js` broadcasts JSON (e.g. `{"type":"clipboard",...}`); voice words are plain text. */
     private fun shouldIgnoreMessage(trimmed: String): Boolean {
         if (!trimmed.startsWith("{")) return false
         return try {
-            JSONObject(trimmed).optString("type") == "clipboard"
+            JSONObject(trimmed)
+            true
         } catch (_: JSONException) {
             false
         }
