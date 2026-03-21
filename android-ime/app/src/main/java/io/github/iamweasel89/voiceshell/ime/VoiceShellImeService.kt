@@ -129,6 +129,10 @@ class VoiceShellImeService : InputMethodService() {
                                             deleteLastWordWithSpace(ic)
                                             return@post
                                         }
+                                        CMD_CLEAR_ALL_1, CMD_CLEAR_ALL_2, CMD_CLEAR_ALL_3, CMD_CLEAR_ALL_4 -> {
+                                            clearAllText(ic)
+                                            return@post
+                                        }
                                         else -> {
                                             val word = text.trim()
                                             if (word.isNotEmpty()) {
@@ -209,6 +213,14 @@ class VoiceShellImeService : InputMethodService() {
         }
     }
 
+    private fun clearAllText(ic: InputConnection) {
+        val before = ic.getTextBeforeCursor(Int.MAX_VALUE, 0) ?: ""
+        val after = ic.getTextAfterCursor(Int.MAX_VALUE, 0) ?: ""
+        ic.setSelection(0, before.length + after.length)
+        ic.commitText("", 1)
+        committedWordLengths.clear()
+    }
+
     private fun circleDrawable(color: Int): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -230,5 +242,13 @@ class VoiceShellImeService : InputMethodService() {
             "\u043d\u0430\u0437\u0430\u0434" // "назад"
         private const val CMD_REMOVE =
             "\u0443\u0431\u0440\u0430\u0442\u044c" // "убрать"
+        private const val CMD_CLEAR_ALL_1 =
+            "\u043e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u0432\u0441\u0451"
+        private const val CMD_CLEAR_ALL_2 =
+            "\u0443\u0431\u0440\u0430\u0442\u044c \u0432\u0441\u0451"
+        private const val CMD_CLEAR_ALL_3 =
+            "\u0441\u0442\u0435\u0440\u0435\u0442\u044c \u0432\u0441\u0451"
+        private const val CMD_CLEAR_ALL_4 =
+            "\u0443\u0431\u0435\u0440\u0438 \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e"
     }
 }
