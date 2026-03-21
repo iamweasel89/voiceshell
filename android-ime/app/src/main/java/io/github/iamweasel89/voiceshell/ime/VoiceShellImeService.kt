@@ -5,6 +5,7 @@ import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -105,17 +106,30 @@ class VoiceShellImeService : InputMethodService() {
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    val trimmed = text.trim()
-                    if (shouldIgnoreMessage(trimmed)) return
+                    mainHandler.post {
+                        Toast.makeText(this@VoiceShellImeService, "RX: '$text'", Toast.LENGTH_SHORT).show()
+                    }
+
+                    if (shouldIgnoreMessage(text.trim())) {
+                        mainHandler.post {
+                            Toast.makeText(this@VoiceShellImeService, "IGNORED: $text", Toast.LENGTH_SHORT).show()
+                        }
+                        return
+                    }
+
                     mainHandler.post {
                         val ic = currentInputConnection ?: return@post
+
                         val normalized = normalizeCommand(text)
+
                         when (normalized) {
                             "убери слово" -> {
+                                Toast.makeText(this@VoiceShellImeService, "CMD: delete last word", Toast.LENGTH_SHORT).show()
                                 val len = committedWordLengths.removeLastOrNull() ?: return@post
                                 ic.deleteSurroundingText(len, 0)
                             }
                             "убери полностью" -> {
+                                Toast.makeText(this@VoiceShellImeService, "CMD: clear all", Toast.LENGTH_SHORT).show()
                                 committedWordLengths.clear()
                                 ic.performContextMenuAction(android.R.id.selectAll)
                                 ic.commitText("", 1)
@@ -123,6 +137,7 @@ class VoiceShellImeService : InputMethodService() {
                             else -> {
                                 val word = text.trim()
                                 if (word.isEmpty()) return@post
+                                Toast.makeText(this@VoiceShellImeService, "INSERT: '$word'", Toast.LENGTH_SHORT).show()
                                 ic.commitText("$word ", 1)
                                 committedWordLengths.addLast(word.length + 1)
                             }
