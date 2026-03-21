@@ -13,6 +13,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONException
 import org.json.JSONObject
+import kotlin.collections.ArrayDeque
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -31,10 +32,10 @@ class VoiceShellImeService : InputMethodService() {
     private var statusDot: View? = null
 
     /**
-     * Characters to delete before the cursor for the last committed segment: last word plus the
-     * trailing space from [commitText] (so [deleteSurroundingText] removes the whole insertion).
+     * Lengths of each committed segment (word plus trailing space from [commitText]) in order, so
+     * [deleteSurroundingText] can remove the last insertion(s) on "убери слово".
      */
-    private var lastWordLength: Int = 0
+    private val committedWordLengths = ArrayDeque<Int>()
 
     private val reconnectRunnable = Runnable {
         if (!destroyed.get() && webSocket == null) connectWebSocket()
@@ -104,25 +105,24 @@ class VoiceShellImeService : InputMethodService() {
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    val word = text.trim()
-                    if (word.isEmpty()) return
-                    if (shouldIgnoreMessage(word)) return
+                    if (shouldIgnoreMessage(text.trim())) return
                     mainHandler.post {
                         val ic = currentInputConnection ?: return@post
-                        when (word) {
+                        when (text) {
                             CMD_DELETE_LAST_WORD -> {
-                                if (lastWordLength <= 0) return@post
-                                ic.deleteSurroundingText(lastWordLength, 0)
-                                lastWordLength = 0
+                                val len = committedWordLengths.removeLastOrNull() ?: return@post
+                                ic.deleteSurroundingText(len, 0)
                             }
                             CMD_CLEAR_ALL -> {
+                                committedWordLengths.clear()
                                 ic.performContextMenuAction(android.R.id.selectAll)
                                 ic.commitText("", 1)
-                                lastWordLength = 0
                             }
                             else -> {
+                                val word = text.trim()
+                                if (word.isEmpty()) return@post
                                 ic.commitText("$word ", 1)
-                                lastWordLength = word.length + 1
+                                committedWordLengths.addLast(word.length + 1)
                             }
                         }
                     }
