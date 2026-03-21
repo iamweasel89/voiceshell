@@ -6,7 +6,6 @@ import android.view.inputmethod.InputConnection
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -33,14 +32,10 @@ class VoiceShellImeService : InputMethodService() {
 
     private var statusDot: View? = null
 
-    /**
-     * Lengths of each committed segment (word plus trailing space from [commitText]) in order, so
-     * [deleteSurroundingText] can remove the last insertion(s) on two-word voice commands.
-     */
-    private val committedWordLengths = ArrayDeque<Int>()
+    private var editMode = false
 
-    /** Previous received word; combined with the next word for two-word command detection. */
-    private var lastWord: String = ""
+    /** Lengths of each committed segment (word plus trailing space from [commitText]) in order. */
+    private val committedWordLengths = ArrayDeque<Int>()
 
     private val reconnectRunnable = Runnable {
         if (!destroyed.get() && webSocket == null) connectWebSocket()
@@ -110,84 +105,47 @@ class VoiceShellImeService : InputMethodService() {
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    mainHandler.post {
-                        Toast.makeText(this@VoiceShellImeService, "RX: '$text'", Toast.LENGTH_SHORT).show()
-                    }
-
-                    if (shouldIgnoreMessage(text.trim())) {
-                        mainHandler.post {
-                            Toast.makeText(this@VoiceShellImeService, "IGNORED: $text", Toast.LENGTH_SHORT).show()
-                        }
-                        return
-                    }
+                    if (shouldIgnoreMessage(text.trim())) return
 
                     mainHandler.post {
                         val ic = currentInputConnection ?: return@post
+                        val normalized = text.trim().lowercase()
 
-                        val newWord = text.trim()
-                        if (newWord.isEmpty()) return@post
-
-                        val combo = if (lastWord.isNotEmpty()) {
-                            "${lastWord.trim()} ${newWord.trim()}".trim().lowercase()
-                        } else {
-                            ""
-                        }
-
-                        if (combo.isNotEmpty()) {
-                            when (combo) {
-                                CMD_DELETE_WORD -> {
-                                    Toast.makeText(
-                                        this@VoiceShellImeService,
-                                        "CMD: delete last word",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    deleteLastCommittedSegment(ic)
-                                    deletePreviousWord(ic)
-                                    lastWord = ""
-                                    return@post
+                        when (normalized) {
+                            CMD_ENTER_EDIT -> {
+                                editMode = true
+                                updateStatusDotColor()
+                                return@post
+                            }
+                            CMD_EXIT_EDIT -> {
+                                editMode = false
+                                updateStatusDotColor()
+                                return@post
+                            }
+                            else -> {
+                                if (editMode) {
+                                    when (normalized) {
+                                        CMD_ERASE, CMD_BACK, CMD_REMOVE -> {
+                                            deleteLastWordWithSpace(ic)
+                                            return@post
+                                        }
+                                        else -> {
+                                            val word = text.trim()
+                                            if (word.isNotEmpty()) {
+                                                ic.commitText("$word ", 1)
+                                                committedWordLengths.addLast(word.length + 1)
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    val word = text.trim()
+                                    if (word.isNotEmpty()) {
+                                        ic.commitText("$word ", 1)
+                                        committedWordLengths.addLast(word.length + 1)
+                                    }
                                 }
-                                CMD_CLEAR_ALL_1, CMD_CLEAR_ALL_2 -> {
-                                    Toast.makeText(
-                                        this@VoiceShellImeService,
-                                        "CMD: clear all",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    deleteLastCommittedSegment(ic)
-                                    val beforeLen =
-                                        ic.getTextBeforeCursor(FIELD_TEXT_MAX_CHARS, 0)?.length ?: 0
-                                    val afterLen =
-                                        ic.getTextAfterCursor(FIELD_TEXT_MAX_CHARS, 0)?.length ?: 0
-                                    ic.deleteSurroundingText(beforeLen, afterLen)
-                                    committedWordLengths.clear()
-                                    lastWord = ""
-                                    return@post
-                                }
-                                else -> { /* insert below */ }
                             }
                         }
-
-                        Toast.makeText(this@VoiceShellImeService, "INSERT: '$newWord'", Toast.LENGTH_SHORT).show()
-                        ic.commitText("$newWord ", 1)
-
-                        val committedFullLength = newWord.length + 1
-                        val readBack = ic.getTextBeforeCursor(committedFullLength, 0) ?: return@post
-                        if (readBack.length < committedFullLength) {
-                            committedWordLengths.addLast(committedFullLength)
-                            lastWord = newWord
-                            return@post
-                        }
-                        val insertedSegment = readBack.subSequence(
-                            readBack.length - committedFullLength,
-                            readBack.length
-                        ).toString()
-                        if (insertedSegment != "$newWord ") {
-                            committedWordLengths.addLast(committedFullLength)
-                            lastWord = newWord
-                            return@post
-                        }
-
-                        committedWordLengths.addLast(committedFullLength)
-                        lastWord = newWord
                     }
                 }
             }
@@ -205,9 +163,18 @@ class VoiceShellImeService : InputMethodService() {
     }
 
     private fun applyConnectionUi(connected: Boolean) {
+        if (!connected) {
+            val dotColor = ContextCompat.getColor(this, R.color.status_dot_disconnected)
+            statusDot?.background = circleDrawable(dotColor)
+        } else {
+            updateStatusDotColor()
+        }
+    }
+
+    private fun updateStatusDotColor() {
         val dotColor = ContextCompat.getColor(
             this,
-            if (connected) R.color.status_dot_connected else R.color.status_dot_disconnected
+            if (editMode) R.color.status_dot_edit else R.color.status_dot_connected
         )
         statusDot?.background = circleDrawable(dotColor)
     }
@@ -223,29 +190,23 @@ class VoiceShellImeService : InputMethodService() {
         }
     }
 
-    /** Removes the last committed segment (word + trailing space) before the cursor. */
-    private fun deleteLastCommittedSegment(ic: InputConnection) {
-        val len = committedWordLengths.removeLastOrNull()
-            ?: (lastWord.trim().takeIf { it.isNotEmpty() }?.let { it.length + 1 })
-            ?: return
-        if (len > 0) ic.deleteSurroundingText(len, 0)
-    }
+    private fun deleteLastWordWithSpace(ic: InputConnection) {
+        val beforeCursor = ic.getTextBeforeCursor(100, 0) ?: return
 
-    /**
-     * Deletes the word immediately before the cursor, including any whitespace after that word
-     * up to the cursor (e.g. the trailing space from [commitText]). Uses [getTextBeforeCursor]
-     * so the delete range matches the field’s actual contents.
-     */
-    private fun deletePreviousWord(ic: InputConnection) {
-        val buf = ic.getTextBeforeCursor(4096, 0)?.toString() ?: return
-        if (buf.isEmpty()) return
-        var i = buf.length - 1
-        while (i >= 0 && buf[i].isWhitespace()) i--
-        if (i < 0) return
-        while (i >= 0 && !buf[i].isWhitespace()) i--
-        val wordStart = i + 1
-        val len = buf.length - wordStart
-        if (len > 0) ic.deleteSurroundingText(len, 0)
+        var end = beforeCursor.length
+        while (end > 0 && beforeCursor[end - 1].isWhitespace()) {
+            end--
+        }
+        var start = end
+        while (start > 0 && !beforeCursor[start - 1].isWhitespace()) {
+            start--
+        }
+
+        val wordLength = end - start
+        if (wordLength > 0) {
+            val spaceBefore = if (start > 0 && beforeCursor[start - 1].isWhitespace()) 1 else 0
+            ic.deleteSurroundingText(wordLength + spaceBefore, 0)
+        }
     }
 
     private fun circleDrawable(color: Int): GradientDrawable {
@@ -257,10 +218,17 @@ class VoiceShellImeService : InputMethodService() {
 
     companion object {
         private const val WS_URL = "ws://100.107.205.27:8080"
-        private const val CMD_DELETE_WORD = "\u0443\u0431\u0435\u0440\u0438\u0020\u0441\u043b\u043e\u0432\u043e"
-        private const val CMD_CLEAR_ALL_1 = "\u0443\u0431\u0435\u0440\u0438\u0020\u0432\u0441\u0451"
-        private const val CMD_CLEAR_ALL_2 = "\u0443\u0431\u0435\u0440\u0438\u0020\u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e"
-        /** Upper bound for [InputConnection.getTextBeforeCursor] / [getTextAfterCursor] when clearing the field. */
-        private const val FIELD_TEXT_MAX_CHARS = 512_000
+        // Edit mode toggle commands
+        private const val CMD_ENTER_EDIT =
+            "\u0440\u0435\u0434\u0430\u043a\u0446\u0438\u044f" // "редакция"
+        private const val CMD_EXIT_EDIT =
+            "\u0433\u043e\u0442\u043e\u0432\u043e" // "готово"
+        // Edit mode commands (single word)
+        private const val CMD_ERASE =
+            "\u0441\u0442\u0435\u0440\u0435\u0442\u044c" // "стереть"
+        private const val CMD_BACK =
+            "\u043d\u0430\u0437\u0430\u0434" // "назад"
+        private const val CMD_REMOVE =
+            "\u0443\u0431\u0440\u0430\u0442\u044c" // "убрать"
     }
 }

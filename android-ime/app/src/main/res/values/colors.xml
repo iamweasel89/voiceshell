@@ -2,4 +2,5 @@
 <resources>
     <color name="status_dot_connected">#66BB6A</color>
     <color name="status_dot_disconnected">#EF5350</color>
+    <color name="status_dot_edit">#FFC107</color>
 </resources>
