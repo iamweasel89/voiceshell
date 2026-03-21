@@ -153,7 +153,7 @@ class VoiceShellImeService : InputMethodService() {
                                 ic.deleteSurroundingText(deleteCmdLen, 0)
                                 deletePreviousWord(ic)
                             }
-                            CMD_CLEAR_ALL -> {
+                            CMD_CLEAR_ALL_1, CMD_CLEAR_ALL_2 -> {
                                 Toast.makeText(
                                     this@VoiceShellImeService,
                                     "CMD: clear all",
@@ -231,8 +231,9 @@ class VoiceShellImeService : InputMethodService() {
 
     companion object {
         private const val WS_URL = "ws://100.107.205.27:8080"
-        private const val CMD_DELETE_LAST_WORD = "\u0443\u0431\u0435\u0440\u0438 \u0441\u043b\u043e\u0432\u043e"
-        private const val CMD_CLEAR_ALL = "\u0443\u0431\u0435\u0440\u0438 \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e"
+        private const val CMD_DELETE_LAST_WORD = "\u0443\u0431\u0435\u0440\u0438\u0020\u0441\u043b\u043e\u0432\u043e"
+        private const val CMD_CLEAR_ALL_1 = "\u0443\u0431\u0435\u0440\u0438\u0020\u0432\u0441\u0451"
+        private const val CMD_CLEAR_ALL_2 = "\u0443\u0431\u0435\u0440\u0438\u0020\u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e"
         /** Upper bound for [InputConnection.getTextBeforeCursor] / [getTextAfterCursor] when clearing the field. */
         private const val FIELD_TEXT_MAX_CHARS = 512_000
     }
