@@ -109,18 +109,19 @@ class VoiceShellImeService : InputMethodService() {
                     if (shouldIgnoreMessage(trimmed)) return
                     mainHandler.post {
                         val ic = currentInputConnection ?: return@post
-                        when (trimmed) {
-                            CMD_DELETE_LAST_WORD -> {
+                        val normalized = normalizeCommand(text)
+                        when (normalized) {
+                            "убери слово" -> {
                                 val len = committedWordLengths.removeLastOrNull() ?: return@post
                                 ic.deleteSurroundingText(len, 0)
                             }
-                            CMD_CLEAR_ALL -> {
+                            "убери полностью" -> {
                                 committedWordLengths.clear()
                                 ic.performContextMenuAction(android.R.id.selectAll)
                                 ic.commitText("", 1)
                             }
                             else -> {
-                                val word = trimmed
+                                val word = text.trim()
                                 if (word.isEmpty()) return@post
                                 ic.commitText("$word ", 1)
                                 committedWordLengths.addLast(word.length + 1)
@@ -159,6 +160,10 @@ class VoiceShellImeService : InputMethodService() {
         } catch (_: JSONException) {
             false
         }
+    }
+
+    private fun normalizeCommand(text: String): String {
+        return text.trim().lowercase()
     }
 
     private fun circleDrawable(color: Int): GradientDrawable {
