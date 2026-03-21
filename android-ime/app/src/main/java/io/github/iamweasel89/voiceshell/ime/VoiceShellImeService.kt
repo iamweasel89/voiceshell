@@ -5,13 +5,14 @@ import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.widget.TextView
 import androidx.core.content.ContextCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONException
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -27,7 +28,6 @@ class VoiceShellImeService : InputMethodService() {
     private val connecting = AtomicBoolean(false)
     private val destroyed = AtomicBoolean(false)
 
-    private var statusText: TextView? = null
     private var statusDot: View? = null
 
     private val reconnectRunnable = Runnable {
@@ -52,7 +52,6 @@ class VoiceShellImeService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         val root = layoutInflater.inflate(R.layout.ime_status_bar, null)
-        statusText = root.findViewById(R.id.status_text)
         statusDot = root.findViewById(R.id.status_dot)
         applyConnectionUi(webSocket != null)
         return root
@@ -101,6 +100,7 @@ class VoiceShellImeService : InputMethodService() {
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     val word = text.trim()
                     if (word.isEmpty()) return
+                    if (shouldIgnoreMessage(word)) return
                     mainHandler.post {
                         currentInputConnection?.commitText("$word ", 1)
                     }
@@ -120,13 +120,21 @@ class VoiceShellImeService : InputMethodService() {
     }
 
     private fun applyConnectionUi(connected: Boolean) {
-        val textRes = if (connected) R.string.status_connected else R.string.status_disconnected
-        statusText?.setText(textRes)
         val dotColor = ContextCompat.getColor(
             this,
             if (connected) R.color.status_dot_connected else R.color.status_dot_disconnected
         )
         statusDot?.background = circleDrawable(dotColor)
+    }
+
+    /** `server.js` broadcasts `{"type":"clipboard","text":"..."}`; plain words are raw text. */
+    private fun shouldIgnoreMessage(trimmed: String): Boolean {
+        if (!trimmed.startsWith("{")) return false
+        return try {
+            JSONObject(trimmed).optString("type") == "clipboard"
+        } catch (_: JSONException) {
+            false
+        }
     }
 
     private fun circleDrawable(color: Int): GradientDrawable {

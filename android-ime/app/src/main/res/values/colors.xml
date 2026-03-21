@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="status_text_primary">#F5F5F5</color>
     <color name="status_dot_connected">#66BB6A</color>
     <color name="status_dot_disconnected">#EF5350</color>
 </resources>

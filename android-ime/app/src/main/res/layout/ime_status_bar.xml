@@ -1,26 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:background="#FF1E1E1E"
-    android:gravity="center_vertical"
-    android:minHeight="40dp"
-    android:orientation="horizontal"
-    android:paddingHorizontal="12dp"
-    android:paddingVertical="8dp">
+    android:layout_height="48dp"
+    android:background="#FF000000">
 
     <View
         android:id="@+id/status_dot"
         android:layout_width="8dp"
         android:layout_height="8dp"
-        android:layout_marginEnd="8dp"
+        android:layout_gravity="center_vertical|start"
+        android:layout_marginStart="12dp"
         android:background="@color/status_dot_disconnected" />
-
-    <TextView
-        android:id="@+id/status_text"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/status_disconnected"
-        android:textColor="@color/status_text_primary"
-        android:textSize="13sp" />
-</LinearLayout>
+</FrameLayout>
