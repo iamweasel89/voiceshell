@@ -229,7 +229,7 @@ class VoiceShellImeService : InputMethodService() {
     }
 
     companion object {
-        private const val WS_URL = "ws://100.107.205.27:8080"
+        private const val WS_URL = "ws://100.104.249.65:8080"
         // Edit mode toggle commands
         private const val CMD_ENTER_EDIT =
             "\u0440\u0435\u0434\u0430\u043a\u0446\u0438\u044f" // "редакция"

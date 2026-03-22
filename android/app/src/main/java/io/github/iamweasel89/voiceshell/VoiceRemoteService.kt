@@ -426,7 +426,7 @@ class VoiceRemoteService : Service() {
 
     companion object {
         private const val LOG_TAG = "VoiceRemoteService"
-        const val DEFAULT_WS_URL = "ws://100.107.205.27:8080"
+        const val DEFAULT_WS_URL = "ws://100.104.249.65:8080"
         private const val CHANNEL_ID = "voiceshell_voice"
         private const val NOTIFICATION_ID = 42
         private const val DELTA_PREFIX = "\u0394"
