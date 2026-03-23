@@ -208,8 +208,13 @@ class VoiceShellImeService : InputMethodService() {
 
         val wordLength = end - start
         if (wordLength > 0) {
-            val spaceBefore = if (start > 0 && beforeCursor[start - 1].isWhitespace()) 1 else 0
-            ic.deleteSurroundingText(wordLength + spaceBefore, 0)
+            if (start == 0) {
+                // Last word only: no chars before it; delete whole buffer before cursor (word + trailing ws).
+                ic.deleteSurroundingText(beforeCursor.length, 0)
+            } else {
+                val spaceBefore = if (beforeCursor[start - 1].isWhitespace()) 1 else 0
+                ic.deleteSurroundingText(wordLength + spaceBefore, 0)
+            }
         }
     }
 
