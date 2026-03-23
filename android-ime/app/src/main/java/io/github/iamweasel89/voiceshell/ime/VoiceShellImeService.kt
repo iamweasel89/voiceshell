@@ -106,6 +106,7 @@ class VoiceShellImeService : InputMethodService() {
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
+                    mainHandler.post { Toast.makeText(this@VoiceShellImeService, "\u0052\u0058\u003a\u0020$text", Toast.LENGTH_SHORT).show() }
                     if (shouldIgnoreMessage(text.trim())) return
 
                     mainHandler.post {
