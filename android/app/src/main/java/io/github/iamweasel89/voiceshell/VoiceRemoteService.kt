@@ -189,13 +189,8 @@ class VoiceRemoteService : Service() {
         }
     }
 
-    private fun beginListeningCycle() {
-        if (destroyed || !speechRecognitionActive) return
-        if (!speechRecognitionAvailable) return
-        ensureRecognizerCreated()
-        val sr = speechRecognizer ?: return
-        sessionEmittedWords = emptyList()
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+    private fun buildRecognitionIntent(): Intent {
+        return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
@@ -210,6 +205,10 @@ class VoiceRemoteService : Service() {
                 )
             }
         }
+    }
+
+    private fun startListeningWithRecognizer(sr: SpeechRecognizer) {
+        val intent = buildRecognitionIntent()
         runCatching {
             sr.startListening(intent)
         }.onFailure {
@@ -218,6 +217,27 @@ class VoiceRemoteService : Service() {
             logVoiceEvent("RECOGNITION_RESTART", "delayMs=500 after startListening failed")
             scheduleStartListening(500)
         }
+    }
+
+    private fun beginListeningCycle() {
+        if (destroyed || !speechRecognitionActive) return
+        if (!speechRecognitionAvailable) return
+        ensureRecognizerCreated()
+        val sr = speechRecognizer ?: return
+        sessionEmittedWords = emptyList()
+        startListeningWithRecognizer(sr)
+    }
+
+    /** Same recognizer, same intent extras as [beginListeningCycle]; minimizes gap after a final result. */
+    private fun restartListeningImmediatelyAfterFinalResult() {
+        if (destroyed || !speechRecognitionActive) return
+        if (!speechRecognitionAvailable) return
+        mainHandler.removeCallbacks(startListeningRunnable)
+        ensureRecognizerCreated()
+        val sr = speechRecognizer ?: return
+        sessionEmittedWords = emptyList()
+        runCatching { sr.stopListening() }
+        startListeningWithRecognizer(sr)
     }
 
     private val recognitionListener = object : RecognitionListener {
@@ -270,8 +290,8 @@ class VoiceRemoteService : Service() {
             sessionEmittedWords = emptyList()
             notifyDebugChanged()
             if (speechRecognitionActive) {
-                logVoiceEvent("RECOGNITION_RESTART", "delayMs=80 after final result")
-                scheduleStartListening(80)
+                logVoiceEvent("RECOGNITION_RESTART", "stop+start immediately after final result")
+                restartListeningImmediatelyAfterFinalResult()
             }
         }
 
