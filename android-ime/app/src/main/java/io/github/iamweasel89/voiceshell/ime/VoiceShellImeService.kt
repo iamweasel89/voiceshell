@@ -124,6 +124,10 @@ class VoiceShellImeService : InputMethodService() {
                             }
                             else -> {
                                 if (editMode) {
+                                    if (isKeywordClearAll(normalized)) {
+                                        clearAllText(ic)
+                                        return@post
+                                    }
                                     when (normalized) {
                                         CMD_ERASE, CMD_BACK, CMD_REMOVE -> {
                                             deleteLastWordWithSpace(ic)
@@ -224,6 +228,21 @@ class VoiceShellImeService : InputMethodService() {
         ic.setSelection(0, before.length + after.length)
         ic.commitText("", 1)
         committedWordLengths.clear()
+    }
+
+    /**
+     * Phrases that name full clear (e.g. scope + delete verb) are not exact matches for
+     * [CMD_ERASE]/[CMD_CLEAR_ALL_*]; handle them before commit or single-word delete.
+     */
+    private fun isKeywordClearAll(normalized: String): Boolean {
+        val hasScope =
+            normalized.contains("\u0432\u0441\u0451") ||
+                normalized.contains("\u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e")
+        if (!hasScope) return false
+        return normalized.contains("\u043e\u0447\u0438\u0441\u0442\u0438") ||
+            normalized.contains("\u0443\u0431\u0440\u0430") ||
+            normalized.contains("\u0441\u0442\u0435\u0440\u0435") ||
+            normalized.contains("\u0443\u0431\u0435\u0440\u0438")
     }
 
     private fun circleDrawable(color: Int): GradientDrawable {
