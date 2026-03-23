@@ -130,6 +130,28 @@ class VoiceShellImeService : InputMethodService() {
 
                     mainHandler.post {
                         val ic = currentInputConnection ?: return@post
+                        val trimmedForJson = text.trim()
+                        if (trimmedForJson.startsWith("{")) {
+                            try {
+                                val obj = JSONObject(trimmedForJson)
+                                if (obj.optString("type") == "delta") {
+                                    val word = obj.optString("word")
+                                    if (word.isNotEmpty()) {
+                                        logVoiceShellMessage(
+                                            text,
+                                            "",
+                                            "\u0064\u0065\u006c\u0074\u0061"
+                                        )
+                                        applyDeltaWord(ic, word)
+                                    }
+                                    return@post
+                                }
+                                // Valid JSON but not voice delta (e.g. clipboard) — do not insert as text.
+                                return@post
+                            } catch (_: JSONException) {
+                                // Not JSON or malformed; treat as plain text below.
+                            }
+                        }
                         val normalized = text.trim().lowercase()
                         val trimmedInner = text.trim()
                         logVoiceShellMessage(
@@ -296,6 +318,25 @@ class VoiceShellImeService : InputMethodService() {
         } catch (_: JSONException) {
             false
         }
+    }
+
+    /**
+     * Replace the last committed word (from [committedWordLengths]) with [word] plus trailing space.
+     * Does not insert \u0394 into the field.
+     */
+    private fun applyDeltaWord(ic: InputConnection, word: String) {
+        clearDeleteFollowUpFlag()
+        when {
+            committedWordLengths.isNotEmpty() -> {
+                val n = committedWordLengths.removeLast()
+                if (n > 0) {
+                    ic.deleteSurroundingText(n, 0)
+                }
+            }
+            else -> deleteLastWordWithSpace(ic)
+        }
+        ic.commitText("$word ", 1)
+        committedWordLengths.addLast(word.length + 1)
     }
 
     private fun deleteLastWordWithSpace(ic: InputConnection) {

@@ -25,6 +25,8 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
     private var bound = false
 
     private var sessionEmittedWords: List<String> = emptyList()
+    /** Last word payload sent over WebSocket (plain text or corrected text after a delta). */
+    private var lastSentWord: String? = null
     private val wordSplitRegex = Regex("\\s+")
 
     private val permissionLauncher = registerForActivityResult(
@@ -236,9 +238,14 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
             words.size == sessionEmittedWords.size &&
                 words.isNotEmpty() &&
                 words.last() != sessionEmittedWords.last() -> {
-                voiceService?.sendPayload(
-                    VoiceRemoteService.WORD_DELTA_PREFIX + words.last()
-                )
+                val w = words.last()
+                if (w.startsWith(VoiceRemoteService.WORD_DELTA_PREFIX)) {
+                    voiceService?.sendDeltaWord(
+                        w.removePrefix(VoiceRemoteService.WORD_DELTA_PREFIX)
+                    )
+                } else {
+                    voiceService?.sendPayload(w)
+                }
             }
         }
         sessionEmittedWords = words

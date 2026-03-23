@@ -20,6 +20,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 
 class VoiceRemoteService : Service() {
@@ -95,6 +96,15 @@ class VoiceRemoteService : Service() {
     fun sendPayload(text: String) {
         logVoiceEvent("WORD_SENT", text)
         webSocket?.send(text)
+    }
+
+    fun sendDeltaWord(correctedWord: String) {
+        val json = JSONObject().apply {
+            put("type", "delta")
+            put("word", correctedWord)
+        }.toString()
+        logVoiceEvent("DELTA_SENT", correctedWord)
+        webSocket?.send(json)
     }
 
     private fun logVoiceEvent(event: String, data: String) {
