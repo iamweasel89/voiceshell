@@ -25,7 +25,7 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
     private var bound = false
 
     private var sessionEmittedWords: List<String> = emptyList()
-    /** Last word payload sent over WebSocket (plain text or corrected text after a delta). */
+    /** Plain text of the last word sent on the socket (new word or replacement); used for delta detection. */
     private var lastSentWord: String? = null
     private val wordSplitRegex = Regex("\\s+")
 
@@ -82,6 +82,7 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
 
         binding.debugClearInput.setOnClickListener {
             sessionEmittedWords = emptyList()
+            lastSentWord = null
             binding.hiddenInput.text?.clear()
             binding.hiddenInput.post { binding.hiddenInput.requestFocus() }
             binding.root.postDelayed({ updateDebugPanel() }, 50)
@@ -233,20 +234,20 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
         }
         when {
             words.size > sessionEmittedWords.size -> {
-                voiceService?.sendPayload(words.last())
+                val w = words.last()
+                voiceService?.sendPayload(w)
+                lastSentWord = w
             }
             words.size == sessionEmittedWords.size &&
                 words.isNotEmpty() &&
                 words.last() != sessionEmittedWords.last() -> {
                 val w = words.last()
-                if (w.startsWith(VoiceRemoteService.WORD_DELTA_PREFIX)) {
-                    voiceService?.sendDeltaWord(
-                        w.removePrefix(VoiceRemoteService.WORD_DELTA_PREFIX)
-                    )
-                } else {
-                    voiceService?.sendPayload(w)
-                }
+                voiceService?.sendDeltaWord(w)
+                lastSentWord = w
             }
+        }
+        if (words.isEmpty()) {
+            lastSentWord = null
         }
         sessionEmittedWords = words
     }
