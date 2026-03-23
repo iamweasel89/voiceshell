@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VoiceShell IME</string>
+    <string name="ime_label">VoiceShell</string>
+    <string name="status_offline">●</string>
+    <string name="status_online">●</string>
+</resources>
