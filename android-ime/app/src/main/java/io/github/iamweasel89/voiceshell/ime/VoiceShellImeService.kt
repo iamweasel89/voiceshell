@@ -6,6 +6,7 @@ import android.view.inputmethod.InputConnection
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -125,6 +126,7 @@ class VoiceShellImeService : InputMethodService() {
                             else -> {
                                 if (editMode) {
                                     if (isKeywordClearAll(normalized)) {
+                                        toastClearAllDebugIfScopeKeywords(text, normalized)
                                         clearAllText(ic)
                                         return@post
                                     }
@@ -134,6 +136,7 @@ class VoiceShellImeService : InputMethodService() {
                                             return@post
                                         }
                                         CMD_CLEAR_ALL_1, CMD_CLEAR_ALL_2, CMD_CLEAR_ALL_3, CMD_CLEAR_ALL_4 -> {
+                                            toastClearAllDebugIfScopeKeywords(text, normalized)
                                             clearAllText(ic)
                                             return@post
                                         }
@@ -220,6 +223,18 @@ class VoiceShellImeService : InputMethodService() {
                 ic.deleteSurroundingText(wordLength + spaceBefore, 0)
             }
         }
+    }
+
+    private fun toastClearAllDebugIfScopeKeywords(raw: String, normalized: String) {
+        val hasScope =
+            normalized.contains("\u0432\u0441\u0451") ||
+                normalized.contains("\u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e")
+        if (!hasScope) return
+        Toast.makeText(
+            this,
+            "raw: $raw\nnormalized: $normalized",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun clearAllText(ic: InputConnection) {
