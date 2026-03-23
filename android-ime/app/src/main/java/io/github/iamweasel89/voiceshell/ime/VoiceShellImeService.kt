@@ -130,6 +130,8 @@ class VoiceShellImeService : InputMethodService() {
 
                     mainHandler.post {
                         val ic = currentInputConnection ?: return@post
+                        var payloadWord = text
+                        var isDeltaWord = false
                         val trimmedForJson = text.trim()
                         if (trimmedForJson.startsWith("{")) {
                             try {
@@ -137,27 +139,23 @@ class VoiceShellImeService : InputMethodService() {
                                 if (obj.optString("type") == "delta") {
                                     val word = obj.optString("word")
                                     if (word.isNotEmpty()) {
-                                        logVoiceShellMessage(
-                                            text,
-                                            "",
-                                            "\u0064\u0065\u006c\u0074\u0061"
-                                        )
-                                        applyDeltaWord(ic, word)
+                                        payloadWord = word
+                                        isDeltaWord = true
                                     }
+                                } else {
+                                    // Valid JSON but not voice delta (e.g. clipboard) — do not insert as text.
                                     return@post
                                 }
-                                // Valid JSON but not voice delta (e.g. clipboard) — do not insert as text.
-                                return@post
                             } catch (_: JSONException) {
                                 // Not JSON or malformed; treat as plain text below.
                             }
                         }
-                        val normalized = text.trim().lowercase()
-                        val trimmedInner = text.trim()
+                        val trimmedInner = payloadWord.trim()
+                        val normalized = trimmedInner.lowercase()
                         logVoiceShellMessage(
                             text,
                             normalized,
-                            describeNonIgnoredCase(trimmedInner, normalized)
+                            if (isDeltaWord) "\u0064\u0065\u006c\u0074\u0061" else describeNonIgnoredCase(trimmedInner, normalized)
                         )
 
                         when (normalized) {
@@ -212,18 +210,24 @@ class VoiceShellImeService : InputMethodService() {
                                             return@post
                                         }
                                         else -> {
-                                            val word = text.trim()
-                                            if (word.isNotEmpty()) {
-                                                ic.commitText("$word ", 1)
-                                                committedWordLengths.addLast(word.length + 1)
+                                            if (trimmedInner.isNotEmpty()) {
+                                                if (isDeltaWord) {
+                                                    applyDeltaWord(ic, trimmedInner)
+                                                } else {
+                                                    ic.commitText("$trimmedInner ", 1)
+                                                    committedWordLengths.addLast(trimmedInner.length + 1)
+                                                }
                                             }
                                         }
                                     }
                                 } else {
-                                    val word = text.trim()
-                                    if (word.isNotEmpty()) {
-                                        ic.commitText("$word ", 1)
-                                        committedWordLengths.addLast(word.length + 1)
+                                    if (trimmedInner.isNotEmpty()) {
+                                        if (isDeltaWord) {
+                                            applyDeltaWord(ic, trimmedInner)
+                                        } else {
+                                            ic.commitText("$trimmedInner ", 1)
+                                            committedWordLengths.addLast(trimmedInner.length + 1)
+                                        }
                                     }
                                 }
                             }
