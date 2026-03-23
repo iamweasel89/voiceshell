@@ -49,6 +49,9 @@ class VoiceShellImeService : InputMethodService() {
     /** Lengths of each committed segment (word plus trailing space from [commitText]) in order. */
     private val committedWordLengths = ArrayDeque<Int>()
 
+    /** Last plain-text word committed; used with [commitPlainWordOrCorrection] for Gboard-style prefix corrections. */
+    private var lastInsertedWord = ""
+
     private val reconnectRunnable = Runnable {
         if (!destroyed.get() && webSocket == null) connectWebSocket()
     }
@@ -162,12 +165,14 @@ class VoiceShellImeService : InputMethodService() {
                             CMD_ENTER_EDIT -> {
                                 editMode = true
                                 clearDeleteFollowUpFlag()
+                                lastInsertedWord = ""
                                 updateStatusDotColor()
                                 return@post
                             }
                             CMD_EXIT_EDIT -> {
                                 editMode = false
                                 clearDeleteFollowUpFlag()
+                                lastInsertedWord = ""
                                 updateStatusDotColor()
                                 return@post
                             }
@@ -196,11 +201,13 @@ class VoiceShellImeService : InputMethodService() {
                                     when (normalized) {
                                         CMD_ERASE, CMD_REMOVE, CMD_CLEAR_IMP, CMD_REMOVE_IMP -> {
                                             deleteLastWordWithSpace(ic)
+                                            lastInsertedWord = ""
                                             scheduleDeleteFollowUpWindow()
                                             return@post
                                         }
                                         CMD_BACK -> {
                                             deleteLastWordWithSpace(ic)
+                                            lastInsertedWord = ""
                                             return@post
                                         }
                                         CMD_CLEAR_ALL_1, CMD_CLEAR_ALL_2, CMD_CLEAR_ALL_3, CMD_CLEAR_ALL_4 -> {
@@ -214,8 +221,7 @@ class VoiceShellImeService : InputMethodService() {
                                                 if (isDeltaWord) {
                                                     applyDeltaWord(ic, trimmedInner)
                                                 } else {
-                                                    ic.commitText("$trimmedInner ", 1)
-                                                    committedWordLengths.addLast(trimmedInner.length + 1)
+                                                    commitPlainWordOrCorrection(ic, trimmedInner)
                                                 }
                                             }
                                         }
@@ -225,8 +231,7 @@ class VoiceShellImeService : InputMethodService() {
                                         if (isDeltaWord) {
                                             applyDeltaWord(ic, trimmedInner)
                                         } else {
-                                            ic.commitText("$trimmedInner ", 1)
-                                            committedWordLengths.addLast(trimmedInner.length + 1)
+                                            commitPlainWordOrCorrection(ic, trimmedInner)
                                         }
                                     }
                                 }
@@ -341,6 +346,35 @@ class VoiceShellImeService : InputMethodService() {
         }
         ic.commitText("$word ", 1)
         committedWordLengths.addLast(word.length + 1)
+        lastInsertedWord = word
+    }
+
+    /**
+     * Plain text: if [lastInsertedWord] is non-empty and [word] starts with it (Gboard-style correction),
+     * remove the last committed segment (word + trailing space) and insert the new word; otherwise append a new word.
+     */
+    private fun commitPlainWordOrCorrection(ic: InputConnection, word: String) {
+        val isCorrection = lastInsertedWord.isNotEmpty() && word.startsWith(lastInsertedWord)
+        if (isCorrection) {
+            clearDeleteFollowUpFlag()
+            when {
+                committedWordLengths.isNotEmpty() -> {
+                    val n = committedWordLengths.removeLast()
+                    if (n > 0) {
+                        ic.deleteSurroundingText(n, 0)
+                    }
+                }
+                else -> {
+                    val n = lastInsertedWord.length + 1
+                    if (n > 0) {
+                        ic.deleteSurroundingText(n, 0)
+                    }
+                }
+            }
+        }
+        ic.commitText("$word ", 1)
+        committedWordLengths.addLast(word.length + 1)
+        lastInsertedWord = word
     }
 
     private fun deleteLastWordWithSpace(ic: InputConnection) {
@@ -385,6 +419,7 @@ class VoiceShellImeService : InputMethodService() {
         ic.setSelection(0, before.length + after.length)
         ic.commitText("", 1)
         committedWordLengths.clear()
+        lastInsertedWord = ""
     }
 
     /**
