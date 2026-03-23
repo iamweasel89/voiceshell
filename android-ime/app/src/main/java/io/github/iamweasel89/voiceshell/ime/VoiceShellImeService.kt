@@ -116,16 +116,6 @@ class VoiceShellImeService : InputMethodService() {
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     mainHandler.post { Toast.makeText(this@VoiceShellImeService, "\u0052\u0058\u003a\u0020$text", Toast.LENGTH_SHORT).show() }
-                    val trimmed = text.trim()
-                    val normalizedForLog = trimmed.lowercase()
-                    if (shouldIgnoreMessage(trimmed)) {
-                        logVoiceShellMessage(
-                            text,
-                            normalizedForLog,
-                            "\u0069\u0067\u006e\u006f\u0072\u0065\u0064\u005f\u006a\u0073\u006f\u006e"
-                        )
-                        return
-                    }
 
                     mainHandler.post {
                         val ic = currentInputConnection ?: return@post
