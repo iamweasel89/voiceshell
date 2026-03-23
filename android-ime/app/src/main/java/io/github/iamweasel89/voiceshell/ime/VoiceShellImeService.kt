@@ -36,6 +36,16 @@ class VoiceShellImeService : InputMethodService() {
 
     private var editMode = false
 
+    /**
+     * Set after [deleteLastWordWithSpace] from single-word delete commands (\u0443\u0431\u0440\u0430\u0442\u044c, etc.).
+     * Next utterance \u0432\u0441\u0451 / \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e then runs [clearAllText]; cleared after clear, any other message, exit edit, or timeout.
+     */
+    private var lastEditVoiceActionWasDeleteWord = false
+
+    private val clearLastDeleteFollowUpFlagRunnable = Runnable {
+        lastEditVoiceActionWasDeleteWord = false
+    }
+
     /** Lengths of each committed segment (word plus trailing space from [commitText]) in order. */
     private val committedWordLengths = ArrayDeque<Int>()
 
@@ -52,6 +62,7 @@ class VoiceShellImeService : InputMethodService() {
     override fun onDestroy() {
         destroyed.set(true)
         mainHandler.removeCallbacks(reconnectRunnable)
+        mainHandler.removeCallbacks(clearLastDeleteFollowUpFlagRunnable)
         webSocket?.close(1000, "destroy")
         webSocket = null
         okHttp.dispatcher.cancelAll()
@@ -130,29 +141,52 @@ class VoiceShellImeService : InputMethodService() {
                         when (normalized) {
                             CMD_ENTER_EDIT -> {
                                 editMode = true
+                                clearDeleteFollowUpFlag()
                                 updateStatusDotColor()
                                 return@post
                             }
                             CMD_EXIT_EDIT -> {
                                 editMode = false
+                                clearDeleteFollowUpFlag()
                                 updateStatusDotColor()
                                 return@post
                             }
                             else -> {
                                 if (editMode) {
+                                    if (lastEditVoiceActionWasDeleteWord) {
+                                        when (normalized) {
+                                            CMD_FOLLOW_CLEAR_AFTER_DELETE_1,
+                                            CMD_FOLLOW_CLEAR_AFTER_DELETE_2 -> {
+                                                toastClearAllDebugIfScopeKeywords(text, normalized)
+                                                clearAllText(ic)
+                                                clearDeleteFollowUpFlag()
+                                                return@post
+                                            }
+                                            else -> {
+                                                clearDeleteFollowUpFlag()
+                                            }
+                                        }
+                                    }
                                     if (isKeywordClearAll(normalized)) {
                                         toastClearAllDebugIfScopeKeywords(text, normalized)
                                         clearAllText(ic)
+                                        clearDeleteFollowUpFlag()
                                         return@post
                                     }
                                     when (normalized) {
-                                        CMD_ERASE, CMD_BACK, CMD_REMOVE -> {
+                                        CMD_ERASE, CMD_REMOVE, CMD_CLEAR_IMP, CMD_REMOVE_IMP -> {
+                                            deleteLastWordWithSpace(ic)
+                                            scheduleDeleteFollowUpWindow()
+                                            return@post
+                                        }
+                                        CMD_BACK -> {
                                             deleteLastWordWithSpace(ic)
                                             return@post
                                         }
                                         CMD_CLEAR_ALL_1, CMD_CLEAR_ALL_2, CMD_CLEAR_ALL_3, CMD_CLEAR_ALL_4 -> {
                                             toastClearAllDebugIfScopeKeywords(text, normalized)
                                             clearAllText(ic)
+                                            clearDeleteFollowUpFlag()
                                             return@post
                                         }
                                         else -> {
@@ -190,10 +224,16 @@ class VoiceShellImeService : InputMethodService() {
             CMD_ENTER_EDIT -> "\u0065\u006e\u0074\u0065\u0072\u005f\u0065\u0064\u0069\u0074"
             CMD_EXIT_EDIT -> "\u0065\u0078\u0069\u0074\u005f\u0065\u0064\u0069\u0074"
             else -> when {
+                editMode && lastEditVoiceActionWasDeleteWord &&
+                    (normalized == CMD_FOLLOW_CLEAR_AFTER_DELETE_1 ||
+                        normalized == CMD_FOLLOW_CLEAR_AFTER_DELETE_2) ->
+                    "\u0063\u006c\u0065\u0061\u0072\u005f\u0061\u006c\u006c\u005f\u0066\u006f\u006c\u006c\u006f\u0077\u005f\u0064\u0065\u006c\u0065\u0074\u0065"
                 editMode && isKeywordClearAll(normalized) ->
                     "\u0063\u006c\u0065\u0061\u0072\u005f\u0061\u006c\u006c\u005f\u006b\u0065\u0077\u006f\u0072\u0064"
                 editMode -> when (normalized) {
-                    CMD_ERASE, CMD_BACK, CMD_REMOVE ->
+                    CMD_ERASE, CMD_REMOVE, CMD_CLEAR_IMP, CMD_REMOVE_IMP ->
+                        "\u0064\u0065\u006c\u0065\u0074\u0065\u005f\u006c\u0061\u0073\u0074\u005f\u0077\u006f\u0072\u0064"
+                    CMD_BACK ->
                         "\u0064\u0065\u006c\u0065\u0074\u0065\u005f\u006c\u0061\u0073\u0074\u005f\u0077\u006f\u0072\u0064"
                     CMD_CLEAR_ALL_1, CMD_CLEAR_ALL_2, CMD_CLEAR_ALL_3, CMD_CLEAR_ALL_4 ->
                         "\u0063\u006c\u0065\u0061\u0072\u005f\u0061\u006c\u006c\u005f\u0063\u006d\u0064"
@@ -210,6 +250,20 @@ class VoiceShellImeService : InputMethodService() {
         if (destroyed.get()) return
         mainHandler.removeCallbacks(reconnectRunnable)
         mainHandler.postDelayed(reconnectRunnable, 2000)
+    }
+
+    private fun scheduleDeleteFollowUpWindow() {
+        lastEditVoiceActionWasDeleteWord = true
+        mainHandler.removeCallbacks(clearLastDeleteFollowUpFlagRunnable)
+        mainHandler.postDelayed(
+            clearLastDeleteFollowUpFlagRunnable,
+            DELETE_FOLLOW_UP_TIMEOUT_MS
+        )
+    }
+
+    private fun clearDeleteFollowUpFlag() {
+        lastEditVoiceActionWasDeleteWord = false
+        mainHandler.removeCallbacks(clearLastDeleteFollowUpFlagRunnable)
     }
 
     private fun postConnectionState(connected: Boolean) {
@@ -311,6 +365,8 @@ class VoiceShellImeService : InputMethodService() {
     }
 
     companion object {
+        private const val DELETE_FOLLOW_UP_TIMEOUT_MS = 5000L
+
         private const val WS_URL = "ws://100.104.249.65:8080"
         // Edit mode toggle commands
         private const val CMD_ENTER_EDIT =
@@ -324,6 +380,15 @@ class VoiceShellImeService : InputMethodService() {
             "\u043d\u0430\u0437\u0430\u0434" // "назад"
         private const val CMD_REMOVE =
             "\u0443\u0431\u0440\u0430\u0442\u044c" // "убрать"
+        private const val CMD_CLEAR_IMP =
+            "\u043e\u0447\u0438\u0441\u0442\u0438" // "очисти"
+        private const val CMD_REMOVE_IMP =
+            "\u0443\u0431\u0435\u0440\u0438" // "убери"
+        /** After delete-word, next utterance clears all instead of inserting. */
+        private const val CMD_FOLLOW_CLEAR_AFTER_DELETE_1 =
+            "\u0432\u0441\u0451" // "всё"
+        private const val CMD_FOLLOW_CLEAR_AFTER_DELETE_2 =
+            "\u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e" // "полностью"
         private const val CMD_CLEAR_ALL_1 =
             "\u043e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u0432\u0441\u0451"
         private const val CMD_CLEAR_ALL_2 =
