@@ -9,15 +9,11 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import android.speech.RecognitionListener
 import android.util.Log
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import androidx.core.app.NotificationCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -30,8 +26,6 @@ class VoiceRemoteService : Service() {
 
     interface ConnectionListener {
         fun onConnectionChanged(connected: Boolean, message: String?)
-
-        fun onVoiceDebugMayHaveChanged() {}
     }
 
     private val binder = LocalBinder()
@@ -52,29 +46,6 @@ class VoiceRemoteService : Service() {
 
     var connectionListener: ConnectionListener? = null
 
-    private var speechRecognizer: SpeechRecognizer? = null
-    private var speechRecognitionActive = false
-    private var sessionEmittedWords: List<String> = emptyList()
-    private val wordSplitRegex = Regex("\\s+")
-
-    @Volatile
-    var speechRecognitionAvailable: Boolean = false
-        private set
-
-    /** Between [startListening][RecognitionListener.onReadyForSpeech] and end of that cycle. */
-    @Volatile
-    var isRecognizerInSession: Boolean = false
-        private set
-
-    @Volatile
-    var lastRecognizerError: String? = null
-        private set
-
-    private val startListeningRunnable = Runnable {
-        if (destroyed || !speechRecognitionActive) return@Runnable
-        beginListeningCycle()
-    }
-
     inner class LocalBinder : Binder() {
         fun getService(): VoiceRemoteService = this@VoiceRemoteService
     }
@@ -83,7 +54,6 @@ class VoiceRemoteService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        speechRecognitionAvailable = SpeechRecognizer.isRecognitionAvailable(this)
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -95,14 +65,7 @@ class VoiceRemoteService : Service() {
         destroyed = false
         wakeLock?.acquire(10 * 60 * 60 * 1000L)
         val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
@@ -113,21 +76,12 @@ class VoiceRemoteService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
         connectWebSocket()
-        mainHandler.post { startContinuousRecognition() }
         return START_STICKY
     }
 
     override fun onDestroy() {
         destroyed = true
-        speechRecognitionActive = false
         mainHandler.removeCallbacks(reconnectRunnable)
-        mainHandler.removeCallbacks(startListeningRunnable)
-        mainHandler.post {
-            runCatching { speechRecognizer?.stopListening() }
-            runCatching { speechRecognizer?.destroy() }
-            speechRecognizer = null
-            isRecognizerInSession = false
-        }
         connectionListener = null
         webSocket?.close(1000, "stop")
         webSocket = null
@@ -141,223 +95,6 @@ class VoiceRemoteService : Service() {
     fun sendPayload(text: String) {
         logVoiceEvent("WORD_SENT", text)
         webSocket?.send(text)
-    }
-
-    /** Recreate the engine and resume the listen loop (e.g. after ERROR_CLIENT or stuck state). */
-    fun restartSpeechRecognition() {
-        mainHandler.post {
-            logVoiceEvent("RECOGNITION_RESTART", "explicit")
-            if (destroyed) return@post
-            runCatching { speechRecognizer?.stopListening() }
-            runCatching { speechRecognizer?.destroy() }
-            speechRecognizer = null
-            isRecognizerInSession = false
-            sessionEmittedWords = emptyList()
-            lastRecognizerError = null
-            notifyDebugChanged()
-            if (speechRecognitionActive) {
-                ensureRecognizerCreated()
-                scheduleStartListening(120)
-            }
-        }
-    }
-
-    private fun startContinuousRecognition() {
-        if (!speechRecognitionAvailable) {
-            lastRecognizerError = "Speech recognition not available on this device"
-            notifyDebugChanged()
-            return
-        }
-        speechRecognitionActive = true
-        ensureRecognizerCreated()
-        scheduleStartListening(0)
-    }
-
-    private fun ensureRecognizerCreated() {
-        if (speechRecognizer != null) return
-        val sr = SpeechRecognizer.createSpeechRecognizer(this)
-        sr.setRecognitionListener(recognitionListener)
-        speechRecognizer = sr
-    }
-
-    private fun scheduleStartListening(delayMs: Long) {
-        mainHandler.removeCallbacks(startListeningRunnable)
-        if (delayMs <= 0L) {
-            mainHandler.post(startListeningRunnable)
-        } else {
-            mainHandler.postDelayed(startListeningRunnable, delayMs)
-        }
-    }
-
-    private fun buildRecognitionIntent(): Intent {
-        return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    2000L
-                )
-            }
-        }
-    }
-
-    private fun startListeningWithRecognizer(sr: SpeechRecognizer) {
-        val intent = buildRecognitionIntent()
-        runCatching {
-            sr.startListening(intent)
-        }.onFailure {
-            lastRecognizerError = it.message ?: "startListening failed"
-            notifyDebugChanged()
-            logVoiceEvent("RECOGNITION_RESTART", "delayMs=500 after startListening failed")
-            scheduleStartListening(500)
-        }
-    }
-
-    private fun beginListeningCycle() {
-        if (destroyed || !speechRecognitionActive) return
-        if (!speechRecognitionAvailable) return
-        ensureRecognizerCreated()
-        val sr = speechRecognizer ?: return
-        sessionEmittedWords = emptyList()
-        startListeningWithRecognizer(sr)
-    }
-
-    /** Same recognizer, same intent extras as [beginListeningCycle]; minimizes gap after a final result. */
-    private fun restartListeningImmediatelyAfterFinalResult() {
-        if (destroyed || !speechRecognitionActive) return
-        if (!speechRecognitionAvailable) return
-        mainHandler.removeCallbacks(startListeningRunnable)
-        ensureRecognizerCreated()
-        val sr = speechRecognizer ?: return
-        sessionEmittedWords = emptyList()
-        runCatching { sr.stopListening() }
-        startListeningWithRecognizer(sr)
-    }
-
-    private val recognitionListener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) {
-            logVoiceEvent("RECOGNITION_START", "")
-            isRecognizerInSession = true
-            lastRecognizerError = null
-            notifyDebugChanged()
-        }
-
-        override fun onBeginningOfSpeech() {}
-
-        override fun onRmsChanged(rmsdB: Float) {}
-
-        override fun onBufferReceived(buffer: ByteArray?) {}
-
-        override fun onEndOfSpeech() {}
-
-        override fun onError(error: Int) {
-            isRecognizerInSession = false
-            lastRecognizerError = speechErrorToString(error)
-            notifyDebugChanged()
-            val delay = when (error) {
-                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 600L
-                SpeechRecognizer.ERROR_CLIENT -> {
-                    mainHandler.post {
-                        runCatching { speechRecognizer?.destroy() }
-                        speechRecognizer = null
-                        ensureRecognizerCreated()
-                    }
-                    250L
-                }
-                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
-                    speechRecognitionActive = false
-                    0L
-                }
-                else -> 120L
-            }
-            if (speechRecognitionActive && error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
-                logVoiceEvent("RECOGNITION_RESTART", "delayMs=$delay after error=$error")
-                scheduleStartListening(delay)
-            }
-        }
-
-        override fun onResults(results: Bundle?) {
-            isRecognizerInSession = false
-            val text = bestHypothesis(results)
-            logVoiceEvent("FINAL_RESULT", text)
-            emitWordsFromHypothesis(text)
-            sessionEmittedWords = emptyList()
-            notifyDebugChanged()
-            if (speechRecognitionActive) {
-                logVoiceEvent("RECOGNITION_RESTART", "stop+start immediately after final result")
-                restartListeningImmediatelyAfterFinalResult()
-            }
-        }
-
-        override fun onPartialResults(partialResults: Bundle?) {
-            val text = bestHypothesis(partialResults)
-            logVoiceEvent("PARTIAL_RESULT", text)
-            emitWordsFromHypothesis(text)
-            notifyDebugChanged()
-        }
-
-        override fun onEvent(eventType: Int, params: Bundle?) {}
-    }
-
-    private fun emitWordsFromHypothesis(hypothesis: String) {
-        if (destroyed) return
-        val raw = hypothesis.trim()
-        val words = if (raw.isEmpty()) {
-            emptyList()
-        } else {
-            raw.split(wordSplitRegex).filter { it.isNotEmpty() }
-        }
-        when {
-            words.size > sessionEmittedWords.size -> {
-                sendPayload(words.last())
-            }
-            words.size == sessionEmittedWords.size &&
-                words.isNotEmpty() &&
-                words.last() != sessionEmittedWords.last() -> {
-                sendPayload(DELTA_PREFIX + words.last())
-            }
-        }
-        sessionEmittedWords = words
-    }
-
-    private fun bestHypothesis(bundle: Bundle?): String {
-        val matches = bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            ?: return ""
-        if (matches.isEmpty()) return ""
-        val scores = bundle.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
-        if (scores != null && scores.size == matches.size) {
-            val idx = scores.indices.maxByOrNull { scores[it] } ?: 0
-            return matches[idx]
-        }
-        return matches[0]
-    }
-
-    private fun speechErrorToString(error: Int): String {
-        val name = when (error) {
-            SpeechRecognizer.ERROR_AUDIO -> "ERROR_AUDIO"
-            SpeechRecognizer.ERROR_CLIENT -> "ERROR_CLIENT"
-            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "ERROR_INSUFFICIENT_PERMISSIONS"
-            SpeechRecognizer.ERROR_NETWORK -> "ERROR_NETWORK"
-            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "ERROR_NETWORK_TIMEOUT"
-            SpeechRecognizer.ERROR_NO_MATCH -> "ERROR_NO_MATCH"
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "ERROR_RECOGNIZER_BUSY"
-            SpeechRecognizer.ERROR_SERVER -> "ERROR_SERVER"
-            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "ERROR_SPEECH_TIMEOUT"
-            else -> "UNKNOWN"
-        }
-        return "$name ($error)"
-    }
-
-    private fun notifyDebugChanged() {
-        mainHandler.post {
-            connectionListener?.onVoiceDebugMayHaveChanged()
-        }
     }
 
     private fun logVoiceEvent(event: String, data: String) {
@@ -447,8 +184,9 @@ class VoiceRemoteService : Service() {
     companion object {
         private const val LOG_TAG = "VoiceRemoteService"
         const val DEFAULT_WS_URL = "ws://100.104.249.65:8080"
+        /** Same token as former speech path: revised last word without a new word boundary. */
+        const val WORD_DELTA_PREFIX = "\u0394"
         private const val CHANNEL_ID = "voiceshell_voice"
         private const val NOTIFICATION_ID = 42
-        private const val DELTA_PREFIX = "\u0394"
     }
 }

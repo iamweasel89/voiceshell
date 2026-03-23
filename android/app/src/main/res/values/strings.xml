@@ -9,14 +9,13 @@
     <string name="status_connecting">Connecting…</string>
     <string name="status_disconnected">Disconnected</string>
     <string name="notification_title">VoiceShell remote</string>
-    <string name="notification_text">SpeechRecognizer — forwarding words</string>
-    <string name="channel_name">Voice input</string>
+    <string name="notification_text">Keyboard (Gboard) — forwarding words</string>
+    <string name="channel_name">Remote input</string>
     <string name="debug_section_title">Debug</string>
-    <string name="debug_speech_listening">Speech session: active (mic open)</string>
-    <string name="debug_speech_idle">Speech session: between cycles</string>
-    <string name="debug_speech_stopped">Speech: service stopped</string>
-    <string name="debug_speech_unavailable">SpeechRecognizer not available on this device</string>
-    <string name="debug_last_error">Last recognizer error: %1$s</string>
-    <string name="debug_no_error">Last recognizer error: none</string>
-    <string name="debug_restart_recognition">Restart recognition</string>
+    <string name="debug_input_focused">Keyboard: hidden field focused (Gboard)</string>
+    <string name="debug_input_waiting_focus">Keyboard: waiting for focus</string>
+    <string name="debug_input_stopped">Keyboard: service stopped</string>
+    <string name="debug_buffer_chars">Buffer: %1$d characters</string>
+    <string name="debug_buffer_empty">Buffer: —</string>
+    <string name="debug_clear_input">Clear buffer</string>
 </resources>

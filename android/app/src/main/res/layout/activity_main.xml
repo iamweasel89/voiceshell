@@ -5,6 +5,21 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
+    <EditText
+        android:id="@+id/hidden_input"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:alpha="0"
+        android:background="@android:color/transparent"
+        android:cursorVisible="false"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:importantForAccessibility="no"
+        android:inputType="text|textCapSentences|textMultiLine"
+        android:padding="0dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <LinearLayout
         android:id="@+id/status_row"
         android:layout_width="wrap_content"
@@ -41,6 +56,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="32dp"
+        android:focusable="false"
         android:minWidth="160dp"
         android:paddingHorizontal="24dp"
         android:text="@string/start"
@@ -74,7 +90,7 @@
             android:letterSpacing="0.05" />
 
         <TextView
-            android:id="@+id/debug_recognition_value"
+            android:id="@+id/debug_input_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -82,7 +98,7 @@
             android:textSize="14sp" />
 
         <TextView
-            android:id="@+id/debug_error_value"
+            android:id="@+id/debug_buffer_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -90,14 +106,15 @@
             android:textSize="14sp" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/debug_restart_recognition"
+            android:id="@+id/debug_clear_input"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
+            android:focusable="false"
             android:minWidth="0dp"
             android:paddingHorizontal="8dp"
-            android:text="@string/debug_restart_recognition"
+            android:text="@string/debug_clear_input"
             android:textColor="@color/status_text_primary"
             android:textSize="14sp" />
     </LinearLayout>
