@@ -25,7 +25,6 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
     private var bound = false
 
     private var sessionEmittedWords: List<String> = emptyList()
-    /** Plain text of the last word sent on the socket (new word or replacement); used for delta detection. */
     private var lastSentWord: String? = null
     private val wordSplitRegex = Regex("\\s+")
 
@@ -188,6 +187,7 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
     private fun stopRemote() {
         serviceRunning = false
         sessionEmittedWords = emptyList()
+        lastSentWord = null
         binding.hiddenInput.text?.clear()
         if (bound) {
             voiceService?.connectionListener = null
@@ -232,24 +232,12 @@ class MainActivity : AppCompatActivity(), VoiceRemoteService.ConnectionListener 
         } else {
             raw.split(wordSplitRegex).filter { it.isNotEmpty() }
         }
-        when {
-            words.size > sessionEmittedWords.size -> {
-                val w = words.last()
-                voiceService?.sendPayload(w)
-                lastSentWord = w
-            }
-            words.size == sessionEmittedWords.size &&
-                words.isNotEmpty() &&
-                words.last() != sessionEmittedWords.last() -> {
-                val w = words.last()
-                voiceService?.sendDeltaWord(w)
-                lastSentWord = w
-            }
-        }
-        if (words.isEmpty()) {
+        for (w in words) {
+            voiceService?.sendPayload(w)
+            binding.hiddenInput.text?.clear()
+            sessionEmittedWords = emptyList()
             lastSentWord = null
         }
-        sessionEmittedWords = words
     }
 
     companion object {
