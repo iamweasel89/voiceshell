@@ -35,12 +35,12 @@ class VoiceShellImeService : InputMethodService() {
         return root
     }
 
-    override fun onDestroyInputView() {
+    override fun onDestroy() {
         main.removeCallbacks(reconnect)
         socket?.cancel()
         socket = null
         statusView = null
-        super.onDestroyInputView()
+        super.onDestroy()
     }
 
     private fun scheduleReconnect(delayMs: Long) {
