@@ -19,7 +19,7 @@ import okio.ByteString
  */
 class VoiceShellImeService : InputMethodService() {
 
-    private val main = Handler(Looper.getMainLooper())
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val http = OkHttpClient()
     private var socket: WebSocket? = null
     private var statusView: TextView? = null
@@ -36,7 +36,7 @@ class VoiceShellImeService : InputMethodService() {
     }
 
     override fun onDestroy() {
-        main.removeCallbacks(reconnect)
+        mainHandler.removeCallbacks(reconnect)
         socket?.cancel()
         socket = null
         statusView = null
@@ -44,8 +44,8 @@ class VoiceShellImeService : InputMethodService() {
     }
 
     private fun scheduleReconnect(delayMs: Long) {
-        main.removeCallbacks(reconnect)
-        main.postDelayed(reconnect, delayMs)
+        mainHandler.removeCallbacks(reconnect)
+        mainHandler.postDelayed(reconnect, delayMs)
     }
 
     private fun openSocket() {
@@ -56,28 +56,22 @@ class VoiceShellImeService : InputMethodService() {
             request,
             object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
-                    main.post {
+                    mainHandler.post {
                         if (socket !== webSocket) return@post
                         setStatus(true)
                     }
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    main.post {
-                        if (socket !== webSocket) return@post
-                        commitWord(text)
-                    }
+                    postCommitWordFromWebSocket(webSocket, text)
                 }
 
                 override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                    main.post {
-                        if (socket !== webSocket) return@post
-                        commitWord(bytes.utf8())
-                    }
+                    postCommitWordFromWebSocket(webSocket, bytes.utf8())
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    main.post {
+                    mainHandler.post {
                         if (socket !== webSocket) return@post
                         socket = null
                         setStatus(false)
@@ -86,7 +80,7 @@ class VoiceShellImeService : InputMethodService() {
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    main.post {
+                    mainHandler.post {
                         if (socket !== webSocket) return@post
                         socket = null
                         setStatus(false)
@@ -97,10 +91,14 @@ class VoiceShellImeService : InputMethodService() {
         )
     }
 
-    private fun commitWord(raw: String) {
-        val word = raw.trim()
-        if (word.isEmpty()) return
-        currentInputConnection?.commitText(word + " ", 1)
+    private fun postCommitWordFromWebSocket(webSocket: WebSocket, raw: String) {
+        Handler(Looper.getMainLooper()).post {
+            if (socket !== webSocket) return@post
+            val word = raw.trim()
+            if (word.isEmpty()) return@post
+            val ic = currentInputConnection ?: return@post
+            ic.commitText(word + " ", 1)
+        }
     }
 
     private fun setStatus(online: Boolean) {
